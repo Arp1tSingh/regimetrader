@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, text
 
-from src.common.db import get_engine, init_db
+from src.common.db import get_engine, init_db, read_sql
 from src.etl.load import load
 from src.etl.quality import (
     DataQualityError,
@@ -193,6 +193,25 @@ def test_dq04_tolerates_short_history_stocks(loaded: tuple) -> None:
     engine, cfg, _ = loaded
     result = check_row_coverage(engine, cfg)
     assert "under 10 years" in result.detail
+
+
+def test_dq04_counts_short_history_stocks(loaded: tuple) -> None:
+    """Regression: the short-history count must actually fire.
+
+    It once subtracted two `YYYYMMDD` integers, so `20221230 - 20220103` gave 1127
+    and was compared against a threshold of 1000. Every span looked "long enough" and
+    the count was always zero. Comparing calendar years fixes it.
+    """
+    engine, cfg, _ = loaded
+    detail = check_row_coverage(engine, cfg).detail
+    count = int(detail.split("; ")[-1].split(" ")[0])
+
+    equities = read_sql(
+        engine, "SELECT COUNT(*) AS n FROM dim_stock WHERE instrument_type = 'EQUITY'"
+    )["n"].iloc[0]
+    # The fixture spans 2022 only, so every equity is under ten years old.
+    assert count == equities
+    assert count > 0
 
 
 # ---------------------------------------------------------------- DQ-05

@@ -6,14 +6,16 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 
 ## Current position
 
-- Phase: 1
-- Next task: T1.8 (real-data full refresh running)
-- Last gate passed: **P0**; P1 ETL step passes (`make smoke` loads 29,890 rows, DQ-01..07 green). 203 fast tests, 212 with slow.
+- Phase: 2
+- Next task: T2.1
+- Last gate passed: **P1** (`make check && make smoke`, plus the `[REAL]` T1.8 full refresh). 206 fast tests, 215 with slow.
 
 ## Checklist
 
 **Phase 0 Scaffold:** [x] T0.1 [x] T0.2 [x] T0.3 [x] T0.4 [x] T0.5
-**Phase 1 Warehouse and ETL:** [x] T1.1 [x] T1.2 [x] T1.3 [x] T1.4 [x] T1.5 [x] T1.6 [x] T1.7 [ ] T1.8 (universe acquired; real-data load in progress)
+**Phase 1 Warehouse and ETL:** [x] T1.1 [x] T1.2 [x] T1.3 [x] T1.4 [x] T1.5 [x] T1.6 [x] T1.7 [x] T1.8
+
+**Gate P1:** `make check && make smoke` plus the `[REAL]` T1.8 refresh. **PASSED.**
 **Phase 2 Indicators and OLAP:** [ ] T2.1 [ ] T2.2
 **Phase 3 Regimes:** [ ] T3.1 [ ] T3.2 [ ] T3.3 [ ] T3.4 [ ] T3.5
 **Phase 4 Classifiers:** [ ] T4.1 [ ] T4.2 [ ] T4.3 [ ] T4.4 [ ] T4.5
@@ -29,8 +31,8 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 | Item | Value |
 |---|---|
 | Universe file source and date | niftyindices.com `ind_nifty50list.csv`, frozen 2026-10-10; 50 rows, all symbols resolve on yfinance |
-| Instruments loaded / stocks with under 10 years of history | pending the real run (T1.8); universe frame = 50 EQUITY + `^NSEI` + `^INDIAVIX` = 52 |
-| Trading days loaded, first and last date | |
+| Instruments loaded / stocks with under 10 years of history | **52 instruments** (50 EQUITY + `^NSEI` + `^INDIAVIX`); **6 stocks under 10 years**: JIOFIN, ETERNAL, MAXHEALTH, HDFCLIFE, SBILIFE, BSE |
+| Trading days loaded, first and last date | 2015-01-02 to 2026-10-09; **2,898 index bars**, 143,481 price rows, 419 rejected (0.29%) |
 | VIX used in regimes (yes or no) and coverage | |
 | Chosen k and why | |
 | Regime day counts (BULL / SIDEWAYS / HIGH_VOL / BEAR) | |
@@ -60,6 +62,10 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 | 2026-10-10 | T1.6 | `src/etl/quality.py`: DQ-01..DQ-07 with the documented hard/soft split. Hard failures raise `DataQualityError` (exit 4); soft ones only warn. DQ-06 is skipped for the synthetic source. 26 tests, each check with a passing and a failing case. |
 | 2026-10-10 | T1.7 | `src/etl/pipeline.py`: full CLI with `--full-refresh/--source/--limit-symbols/--config`, the documented exit codes (0/1/2/3/4), incremental start from the last index date minus `data.incremental_overlap_days`, and a run manifest. **Gate P1 ETL step passes**: `make smoke` loads 29,890 rows over 14 synthetic instruments, rerun is byte-identical (checksum `db084e49601104d3`), and the incremental run resumes from 2025-06-25 and loads 56 rows with the checksum unchanged. |
 | 2026-10-10 | T1.7 | **Two real bugs found by the smoke run and fixed.** (a) With `source: synthetic` the pipeline loaded the *real* Nifty 50 universe against generated SYN01..SYN12 data, so only the 2 shared symbols survived (2 instruments / 4,270 rows). `extract` now carries the generated universe on `raw.attrs` and it wins. Now 14 instruments / 29,890 rows. (b) **Incremental loads corrupted the trading calendar**: `build_dim_date` only saw the incremental slice, so it set `is_trading_day = 0` on all 2,131 earlier trading days, which then failed DQ-03 on 29,834 rows. `load` now recomputes the flags from the index's bars already in the warehouse. Regression test added. |
+| 2026-10-10 | T1.8 | **Real-data full refresh completed.** `--source yfinance` over 52 instruments from 2015-01-01. 143,490 rows extracted, 143,481 loaded, 419 rejected (0.29%, under the 1% limit). `etl_run_log` status SUCCESS. All hard checks pass; all seven DQ checks pass. Trading days 2015-01-02 to 2026-10-09 = **2,898 index bars** (T1.8 expects "roughly 2,900"). Incremental rerun from 2026-10-04 loaded 269 rows and left the checksum unchanged (`708ed823a676c394`). |
+| 2026-10-10 | T1.8 | The 419 rejections are **all** `NON_TRADING_DAY`, on 9 distinct dates (2015-01-01, 2015-04-15, 2016-01-01, 2016-08-12, 2018-01-01, 2019-01-01, 2019-10-27, 2020-11-14, 2026-01-15). These are genuine NSE holidays where `^NSEI` correctly has no bar but individual stock series still returned one. Expected, not a defect. |
+| 2026-10-10 | T1.8 | **6 stocks have under 10 years of history** (DECISIONS R10): JIOFIN.NS from 2023-08-21, ETERNAL.NS from 2021-07-23, MAXHEALTH.NS from 2020-08-21, HDFCLIFE.NS from 2017-11-17, SBILIFE.NS from 2017-10-03, BSE.NS from 2017-02-03. The panel is therefore unbalanced; this is expected and must be reported. |
+| 2026-10-10 | T1.8 | **Bug found and fixed while recording T1.8**: `_count_under_10_years` compared two `YYYYMMDD` integers (`last_key - first_key < 1000`). `20221230 - 20220103` is 1127 and `20261009 - 20150102` is 110907, so no real span ever fell under the threshold and the check **always reported 0**. Replaced with a calendar-year comparison; it now correctly reports 6. Regression test added. |
 | 2026-10-10 | tooling | GNU Make ships the smoke recipe with `#` comment lines, but `cmd.exe` does not treat `#` as a comment, so the whole target failed with `CreateProcess failed`. Changed to `@REM`, which both shells ignore. |
 
 ## Blockers

@@ -181,18 +181,26 @@ def check_row_coverage(engine: Engine, cfg: Mapping[str, Any]) -> CheckResult:
 
 
 def _count_under_10_years(engine: Engine) -> int:
-    """Stocks whose loaded history is shorter than ten years (DECISIONS R10)."""
+    """Stocks whose loaded history is shorter than ten years (DECISIONS R10).
+
+    Compared as dates, not by subtracting the `YYYYMMDD` integers: `20200101 -
+    20150101` is 50000, not 5000, so key arithmetic would never detect a short history.
+    """
     df = read_sql(
         engine,
         """
-        WITH idx AS (SELECT MAX(date_key) AS last_key FROM fact_price)
-        SELECT COUNT(*) AS n FROM (
+        WITH idx AS (SELECT MAX(date_key) AS last_key FROM fact_price),
+        first_bar AS (
             SELECT s.symbol, MIN(f.date_key) AS first_key
-            FROM fact_price f JOIN dim_stock s ON s.stock_key = f.stock_key, idx
+            FROM fact_price f
+            JOIN dim_stock s ON s.stock_key = f.stock_key
             WHERE s.instrument_type = 'EQUITY'
             GROUP BY s.symbol
-            HAVING idx.last_key - first_key < 1000
         )
+        SELECT COUNT(*) AS n
+        FROM first_bar, idx
+        WHERE SUBSTR(CAST(idx.last_key AS TEXT), 1, 4)
+            - SUBSTR(CAST(first_bar.first_key AS TEXT), 1, 4) < 10
         """,
     )
     return int(df["n"].iloc[0] or 0)
