@@ -86,8 +86,23 @@ Precedence (later wins), deep-merged:
 
    ```yaml
    strategy: {selected_model: rf, entry_base: 0.55, slots: 10}
-   meta: {tuned_at: "2026-10-10T09:00:00", validation_sharpe: 0.62, trials: 16, method: threshold}   # method: threshold | rank_fallback
+   meta:
+     tuned_at: "2026-10-10T09:00:00"
+     validation_sharpe: 0.62
+     method: activity_and_null_filtered   # activity_and_null_filtered | no_edge_default
+     outcome: selected                     # selected | no_edge_default
+     demonstrated_edge: true               # false whenever outcome is no_edge_default
+     n_trades: 655
+     exposure: 0.41
+     threshold_method_per_model: {logreg: percentile_p80, tree: excluded, rf: percentile_p80, xgb: absolute}
+     excluded_from_tuning: {tree: "tied share 76.4% exceeds 20%; p95-p50 0.0000 below 0.01"}
+     activity_filter: {min_round_trips: 30, min_exposure: 0.10, passed: 12, of: 18}
+     null_filter: {sims: 100, percentile: 90, shortlisted: 3, passed: 0}
+     grid_trials: 18
+     total_logged_trials: 31
    ```
+
+   `meta.method` records **how the frozen strategy was chosen**, not the threshold method; the per-model threshold method lives in `threshold_method_per_model`. When `outcome` is `no_edge_default`, `strategy` holds the highest-ROC-AUC eligible model on the spec's starting settings and `demonstrated_edge` is `false` (`DECISIONS` R41).
 
 `src.backtest.tune` ignores the frozen strategy keys while it runs (it grids them). `final_test` copies the effective frozen file to `reports/results/frozen_config_used.yaml`.
 

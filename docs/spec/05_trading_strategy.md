@@ -130,9 +130,17 @@ Classifier probabilities for daily direction cluster near 0.5, so thresholds can
 
 5. **Tie-break reporting** (`DECISIONS` R34). Every tuning and baseline run reports `tie_break_share` — the share of new entries sitting on the cutoff probability, which were therefore chosen by symbol order rather than by a higher probability. A run above **5%** is flagged `tie_break_flagged` in `tune_grid_validation.csv` and excluded from selection with a note in the trial log. Flagged and non-trading runs both stay in the CSV and the log.
 
-6. **Selection:** highest validation Sharpe among `traded` runs; tie-break lower turnover. Write `selected_model`, `entry_base`, `slots` under `strategy:` in `paths.frozen_config`, with `meta.method` **per model** (`method_per_model`), plus `excluded_from_tuning` and the trial counts.
+6. **Selection (`DECISIONS` R39-R42).** Selection by Sharpe **alone is not used anywhere.** A configuration must clear two filters in order; survival is a precondition, not a filter applied afterwards.
 
-7. Report the number of configurations tried (trial log) and which method each model used.
+   - **Activity filter (R39).** Eligible only with at least **30 completed round trips** and **mean exposure at least 10%** on the validation period. 30 round trips is the smallest sample whose trade-level hit rate has a usable standard error (about 9 points near 50%).
+   - **Null filter (R40).** Take the **top 3 by Sharpe** among activity-eligible configurations and run the B4 symbol-permutation null for **each**, 100 simulations, seed from config. A configuration is selectable only if its Sharpe **exceeds the 90th percentile of its own null**. Each null is run under that configuration's own entry base and slots, not a shared one.
+   - **Survivors** are ordered by Sharpe with the turnover tie-break, as before.
+
+7. **No demonstrated edge (R41).** If **no** configuration passes both filters, the frozen config is recorded as **no demonstrated edge**: `selected_model` is the **highest-validation-ROC-AUC model among the distribution-eligible models**, with the spec's starting strategy settings (`entry_base` 0.55 with its fallback rule, `slots` 10), and `meta.method = no_edge_default`.
+
+8. Report the number of configurations tried (trial log), how many passed each filter, and which path was taken. Every B4 null simulation is logged as `kind = "other"`.
+
+9. **Trial accounting across grids (R43).** If a grid is re-run under a revised selection rule, the earlier run's output is preserved under a separate filename, its trial rows remain counted, and a `kind = "other"` row records the revision. A revised protocol that silently replaces the first attempt is indistinguishable from tuning until something looked good.
 
 Discipline: tune only on the validation year; keep the grid small; never touch the test period; after the final test do not change the strategy and re-run (`06` section 8).
 
