@@ -122,53 +122,83 @@ def make_v2(cfg: Mapping[str, Any], **kw: Any) -> WeightProvider:
 
 
 def make_b1(cfg: Mapping[str, Any], **kw: Any) -> WeightProvider:
-    """Buy and hold: weight 1.0 on the first decision, then None (no more orders)."""
+    """B1, buy and hold the index: weight 1.0 on `data.index_symbol` at the first
+    decision, then None for the rest of the period (`spec 06` section 6).
+
+    If the index has no bar on the first decision day, the run raises rather than
+    silently substituting an equity: a "buy and hold" baseline that quietly held a
+    stock would not be the benchmark the report claims.
+    """
+    index_symbol = str(cfg["data"]["index_symbol"])
     state = {"done": False}
 
     def provider(context: DayContext) -> pd.Series | None:
         if state["done"] or context.signals.empty:
             return None
+        if index_symbol not in context.signals.index:
+            raise ValueError(
+                f"B1 needs a bar for {index_symbol} on the first decision day; "
+                f"it is not in the tradable universe"
+            )
         state["done"] = True
-        return pd.Series(1.0, index=sorted(context.signals.index)[:1], dtype=float)
+        return pd.Series(1.0, index=[index_symbol], dtype=float)
 
-    del cfg, kw
+    del kw
     return provider
 
 
 def make_b2(cfg: Mapping[str, Any], **kw: Any) -> WeightProvider:
-    """Equal weight across the universe, invested from the first day and rebalanced
-    on every month end (DECISIONS R29)."""
-    slots = int(cfg["strategy"]["slots"])
-    weight = 1.0 / slots
-    started = {"done": False}
+    """B2, equal-weight stocks rebalanced monthly (`spec 06` section 6).
+
+    Weight is `1 / N` where `N` is the number of stocks with a bar that day, not the
+    strategy's slot count: the baseline has to be able to hold the whole universe.
+    """
+    index_symbol = str(cfg["data"]["index_symbol"])
+    state = {"done": False}
 
     def provider(context: DayContext) -> pd.Series | None:
         if context.signals.empty:
             return None
-        if not started["done"]:
-            started["done"] = True
+        if not state["done"]:
+            state["done"] = True
         elif not context.is_month_end:
             return None  # hold between month ends
-        available = sorted(context.signals.index)
+        available = sorted(s for s in context.signals.index if s != index_symbol)
         if not available:
             return None
-        return pd.Series(weight, index=available[:slots], dtype=float)
+        return pd.Series(1.0 / len(available), index=available, dtype=float)
 
-    del cfg, kw
+    del kw
     return provider
 
 
 def make_b3(cfg: Mapping[str, Any], **kw: Any) -> WeightProvider:
-    """The index itself, held for the whole period."""
-    state = {"done": False}
+    """B3, the trend rule with no ML: hold every stock with `sma_20 > sma_50`,
+    weight `1 / N_universe` each and rest in cash, recomputed daily
+    (`spec 06` section 6)."""
+    del cfg, kw
 
     def provider(context: DayContext) -> pd.Series | None:
-        if state["done"] or context.signals.empty:
+        if context.signals.empty or context.indicators.empty:
             return None
-        state["done"] = True
-        return pd.Series(1.0, index=sorted(context.signals.index)[:1], dtype=float)
+        for column in ("sma_20", "sma_50"):
+            if column not in context.indicators.columns:
+                return None
+        symbols = sorted(set(context.signals.index) & set(context.indicators.index))
+        if not symbols:
+            return None
+        fast = context.indicators["sma_20"].reindex(symbols)
+        slow = context.indicators["sma_50"].reindex(symbols)
+        # A NaN SMA (still warming up) disqualifies the stock: no signal is not a hold.
+        trending = sorted(
+            symbol
+            for symbol in symbols
+            if pd.notna(fast[symbol]) and pd.notna(slow[symbol]) and fast[symbol] > slow[symbol]
+        )
+        if not trending:
+            return None
+        return pd.Series(1.0 / len(symbols), index=trending, dtype=float)
 
-    del cfg, kw
     return provider
 
 

@@ -144,6 +144,78 @@ def exposure(equity: pd.DataFrame) -> float:
     return float((equity["positions_value"] > 0).mean())
 
 
+def block_bootstrap_sharpe(
+    returns: pd.Series,
+    *,
+    block_days: int,
+    resamples: int,
+    ci_low: float,
+    ci_high: float,
+    rf_annual: float = 0.0,
+    seed: int = 42,
+) -> dict[str, float]:
+    """Moving-block bootstrap interval for Sharpe (`spec 06` section 7.2).
+
+    Daily strategy returns are serially correlated, so blocks of `block_days` are
+    resampled whole rather than single days. Start indices are uniform in
+    `[0, n - block]`, blocks are concatenated and trimmed to length `n`.
+
+    Args:
+        returns: Daily returns, as fractions.
+        block_days: Block length in trading days.
+        resamples: Number of resamples.
+        ci_low: Lower percentile, e.g. 5 for the spec's 5th percentile.
+        ci_high: Upper percentile.
+        rf_annual: Annual risk-free rate, as a fraction.
+        seed: Seed, so the interval is reproducible.
+
+    Returns:
+        `sharpe`, `ci_low`, `ci_high`, `n`, `block_days` and `resamples`. The bounds
+        are NaN when the return series is too short to form one block.
+    """
+    values = pd.Series(returns).to_numpy(dtype=float)
+    values = values[np.isfinite(values)]
+    n = values.size
+    point = sharpe(pd.Series(values), rf_annual) if n > 1 else float("nan")
+
+    block = int(block_days)
+    if n < block or block < 1 or resamples < 1:
+        return {
+            "sharpe": point,
+            "ci_low": float("nan"),
+            "ci_high": float("nan"),
+            "n": int(n),
+            "block_days": block,
+            "resamples": int(resamples),
+        }
+
+    rng = np.random.default_rng(seed)
+    blocks_needed = math.ceil(n / block)
+    starts_max = n - block  # inclusive, so a block never runs past the series
+    samples = np.empty((int(resamples), n), dtype=float)
+    for i in range(int(resamples)):
+        starts = rng.integers(0, starts_max + 1, size=blocks_needed)
+        chunks = [values[s : s + block] for s in starts]
+        samples[i] = np.concatenate(chunks)[:n]
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = samples.mean(axis=1)
+        std = samples.std(axis=1, ddof=1)
+        scale = math.sqrt(TRADING_DAYS)
+        rf_daily = rf_annual / TRADING_DAYS
+        null = np.where(std > 0, (mean - rf_daily) / std * scale, np.nan)
+    good = null[np.isfinite(null)]
+
+    return {
+        "sharpe": point,
+        "ci_low": float(np.percentile(good, ci_low)) if good.size else float("nan"),
+        "ci_high": float(np.percentile(good, ci_high)) if good.size else float("nan"),
+        "n": int(n),
+        "block_days": block,
+        "resamples": int(resamples),
+    }
+
+
 def summarize(
     equity_df: pd.DataFrame, trades_df: pd.DataFrame, cfg: Mapping[str, Any]
 ) -> dict[str, Any]:

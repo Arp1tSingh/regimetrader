@@ -1,0 +1,25 @@
+{
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\backtest\\baselines.py --config config/config.yaml --period validation --no-b4",
+  "config_hash": "e385308b80af",
+  "data_range": {
+    "first_date_key": 20150102,
+    "last_date_key": 20261009
+  },
+  "extra": {
+    "model": "rf",
+    "period": "validation",
+    "rows": 3
+  },
+  "git_commit": "fae38050b5e94c39a7eb98ad6445083ac2ffe723",
+  "models_used": [],
+  "package_versions": {
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "python": "3.14.8",
+    "scikit-learn": "1.9.1",
+    "xgboost": "3.4.1"
+  },
+  "run_id": "baselines_validation",
+  "seed": 42,
+  "timestamp": "2026-10-10T11:18:06+00:00"
+}

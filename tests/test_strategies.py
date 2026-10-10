@@ -46,6 +46,8 @@ def context(
 
 
 PROBS = {f"S{i:02d}.NS": 0.55 + i / 100 for i in range(15)}
+#: The index, as B1 must buy and hold it rather than the first alphabetical equity.
+INDEX = "^NSEI"
 
 
 def test_unknown_strategy_raises() -> None:
@@ -102,44 +104,16 @@ def test_variants_return_none_without_signals() -> None:
 
 
 # --------------------------------------------------------------- baselines
-
-
-def test_b1_trades_once_then_holds() -> None:
-    """B1 returns weight 1.0 once, then None on every later decision."""
-    provider = make_weights_fn("B1", cfg())
-    first = provider(context(PROBS))
-    assert first is not None and len(first) == 1
-    assert first.iloc[0] == pytest.approx(1.0)
-
-    for _ in range(5):
-        assert provider(context(PROBS)) is None
-
-
-def test_b2_invests_from_first_day_and_rebalances_on_month_ends() -> None:
-    """B2 is invested immediately and only rebalances on month ends."""
-    provider = make_weights_fn("B2", cfg())
-    first = provider(context(PROBS, is_month_end=False))
-    assert first is not None and len(first) > 0
-    assert (first.round(6) == 0.20).all()
-
-    # Not a month end: no orders.
-    assert provider(context(PROBS, is_month_end=False)) is None
-
-    # Month end: rebalances.
-    assert provider(context(PROBS, is_month_end=True)) is not None
-
-
-def test_b3_holds_the_index() -> None:
-    provider = make_weights_fn("B3", cfg())
-    assert provider(context(PROBS)) is not None
-    assert provider(context(PROBS)) is None
+# B1 to B3 are specified in `spec 06` section 6 and tested in `test_baselines.py`,
+# which covers the index symbol, the 1/N weighting, the SMA rule and the B4 null.
 
 
 def test_providers_are_fresh_objects() -> None:
     """Providers hold state, so each build must start clean."""
+    day = {**PROBS, INDEX: 0.5}
     b1 = make_weights_fn("B1", cfg())
-    b1(context(PROBS))
-    assert make_weights_fn("B1", cfg())(context(PROBS)) is not None
+    b1(context(day))
+    assert make_weights_fn("B1", cfg())(context(day)) is not None
 
 
 # --------------------------------------------------------------- integration

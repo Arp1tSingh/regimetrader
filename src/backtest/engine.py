@@ -114,16 +114,24 @@ class BacktestResult:
 
 
 def _load_market(engine: Any, cfg: Mapping[str, Any]) -> dict[str, Any]:
-    """Prices, regimes, indicators and dim_date, all indexed by date_key."""
+    """Prices, regimes, indicators and dim_date, all indexed by date_key.
+
+    The tradable universe is equities **plus the index**. The index is included only so
+    the B1 buy-and-hold baseline can hold it (`spec 06` section 6); it carries no
+    classifier signal, so no strategy provider can select it.
+    """
     from src.common.db import read_sql
 
+    index_symbol = str(cfg["data"]["index_symbol"])
     prices = read_sql(
         engine,
         "SELECT f.date_key AS date_key, s.symbol AS symbol, s.instrument_type AS itype, "
         "       f.open_price AS open, f.high_price AS high, f.low_price AS low, "
         "       f.close_price AS close, f.volume AS volume, f.is_flagged AS is_flagged "
         "FROM fact_price f JOIN dim_stock s ON s.stock_key = f.stock_key "
-        "WHERE s.instrument_type = 'EQUITY' ORDER BY f.date_key, s.symbol",
+        "WHERE s.instrument_type = 'EQUITY' OR s.symbol = :idx "
+        "ORDER BY f.date_key, s.symbol",
+        {"idx": index_symbol},
     )
     regimes = read_sql(
         engine,
@@ -133,7 +141,8 @@ def _load_market(engine: Any, cfg: Mapping[str, Any]) -> dict[str, Any]:
     indicators = read_sql(
         engine,
         "SELECT i.date_key AS date_key, s.symbol AS symbol, i.return_20d AS return_20d, "
-        "       i.vol_20d AS vol_20d, i.rsi_14 AS rsi_14 "
+        "       i.vol_20d AS vol_20d, i.rsi_14 AS rsi_14, "
+        "       i.sma_20 AS sma_20, i.sma_50 AS sma_50 "
         "FROM fact_indicator i JOIN dim_stock s ON s.stock_key = i.stock_key "
         "WHERE s.instrument_type = 'EQUITY'",
     )
@@ -369,10 +378,17 @@ def run_backtest(
         # 3. DECIDE: only data up to today's close.
         regime = market["regimes"].get(date_key, "SIDEWAYS")
         probs_today = signals.get(date_key, {})
+        # The tradable universe is everything with a bar today, carrying a `prob_up`
+        # where the model predicted one. The index is in that universe so B1 can hold
+        # it; its `prob_up` is NaN, and NaN never qualifies for entry, so no strategy
+        # provider can select it.
+        tradable = set(probs_today) | {
+            symbol for symbol, value in market["closes"].get(date_key, {}).items() if value
+        }
         signal_frame = pd.DataFrame(
-            {"prob_up": pd.Series(probs_today, dtype="float64")}
-            if probs_today
-            else pd.DataFrame(columns=["prob_up"])
+            {"prob_up": pd.Series({s: probs_today.get(s, float("nan")) for s in sorted(tradable)})}
+            if tradable
+            else pd.DataFrame(columns=["prob_up"], dtype="float64")
         )
         indicator_rows = market["indicators"]
         today_indicators = (
@@ -437,6 +453,13 @@ def run_backtest(
         stop_pending = set(force_exit)
 
     equity_df = pd.DataFrame(equity_rows)
+    # `summarize` needs a DatetimeIndex to measure elapsed time for CAGR; a
+    # RangeIndex silently yields NaN for every growth figure.
+    if len(equity_df):
+        equity_df["date"] = pd.to_datetime(
+            equity_df["date_key"].astype("int64").astype(str), format="%Y%m%d"
+        )
+        equity_df = equity_df.set_index("date")
     equity_df["daily_return"] = equity_df["equity"].pct_change()
     trades_df = pd.DataFrame(trade_rows)
     signals_df = pd.DataFrame(decision_rows)
