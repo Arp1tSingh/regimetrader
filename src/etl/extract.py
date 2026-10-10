@@ -234,9 +234,18 @@ def extract(
 
     if source == "synthetic":
         # The generator returns the whole market at once; no retry loop is needed.
-        prices, _ = make_synthetic_market(cfg)
+        # Its universe is carried through on `attrs` because the synthetic symbols
+        # differ from the real Nifty 50 file and the loader must use these instead.
+        prices, synthetic_universe = make_synthetic_market(cfg)
         prices = prices[prices["trade_date"] >= pd.Timestamp(start)]
         frames.append(prices)
+        frames.append(prices)
+        result = pd.concat(frames, ignore_index=True)[list(LONG_COLUMNS)]
+        result = result.sort_values(["symbol", "trade_date"], kind="stable").reset_index(drop=True)
+        result.attrs["universe"] = synthetic_universe
+        if engine is not None:
+            _stage(engine, result)
+        return result
     else:
         for symbol in symbols:
             if source == "yfinance":

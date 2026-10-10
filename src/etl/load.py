@@ -126,8 +126,28 @@ def _num(value: Any) -> float | None:
     return float(value)
 
 
-def _recompute_month_end(conn: Any) -> None:
-    """Recompute `dim_date.is_month_end` from the trading days actually present."""
+def _recompute_date_flags(conn: Any, index_symbol: str) -> None:
+    """Recompute `is_trading_day` and `is_month_end` from the index's bars in the
+    warehouse, not from the current batch.
+
+    An incremental load only sees the recent slice, so deriving the calendar from the
+    incoming rows would clear `is_trading_day` on every earlier trading day. The index
+    is the authority for the calendar (`03` section 4.2 step 3), so it is read back
+    from `fact_price` here.
+
+    `is_month_end` is the last trading day of each calendar month present
+    (`DECISIONS` R20), because B2 rebalances on month ends.
+    """
+    conn.execute(text("UPDATE dim_date SET is_trading_day = 0"))
+    conn.execute(
+        text(
+            "UPDATE dim_date SET is_trading_day = 1 WHERE date_key IN ("
+            "  SELECT DISTINCT f.date_key FROM fact_price f "
+            "  JOIN dim_stock s ON s.stock_key = f.stock_key "
+            "  WHERE s.symbol = :index_symbol)"
+        ),
+        {"index_symbol": index_symbol},
+    )
     conn.execute(text("UPDATE dim_date SET is_month_end = 0 WHERE is_trading_day = 1"))
     conn.execute(
         text(
@@ -220,13 +240,15 @@ def load(
             }
 
             if cfg is not None and not clean.empty:
+                # `build_dim_date` already spans data.start_date to the last loaded
+                # date, so an incremental load still carries every calendar day.
                 trading = pd.DatetimeIndex(
                     pd.to_datetime(clean["date_key"].astype(str), format="%Y%m%d").unique()
                 ).sort_values()
                 execute_many(conn, _UPSERT_DATE, _dim_date_rows(trading, cfg))
 
             loaded = execute_many(conn, _UPSERT_PRICE, _price_rows(clean, keys))
-            _recompute_month_end(conn)
+            _recompute_date_flags(conn, cfg["data"]["index_symbol"] if cfg else "^NSEI")
 
         result = {
             "rows_extracted": int(stats.get("rows_extracted", len(clean))),

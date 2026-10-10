@@ -45,15 +45,15 @@ test:
 smoke:
 	$(SMOKE_CLEAN)
 	$(PY) -m src.etl.pipeline --full-refresh --config $(SMOKE)
-	# $(PY) -m src.features.builder --indicators --config $(SMOKE)            # Phase 2
-	# $(PY) -m src.olap.run --all --config $(SMOKE)                           # Phase 2
-	# $(PY) -m src.regime.regime_model --fit --config $(SMOKE)                # Phase 3
-	# $(PY) -m src.models.train --config $(SMOKE)                             # Phase 4
-	# $(PY) -m src.backtest.tune --config $(SMOKE)                            # Phase 5
-	# $(PY) -m src.backtest.baselines --all --period validation --config $(SMOKE)   # Phase 5
-	# $(PY) -m src.backtest.final_test --confirm --config $(SMOKE)           # Phase 6
-	# $(PY) -m src.backtest.report --config $(SMOKE)                          # Phase 6
-	# $(PY) -m src.paper.daily_job --no-etl --run-id paper_replay --from 2025-01-02 --to 2025-03-31 --config $(SMOKE)   # Phase 7
+	@REM Phase 2: $(PY) -m src.features.builder --indicators --config $(SMOKE)
+	@REM Phase 2: $(PY) -m src.olap.run --all --config $(SMOKE)
+	@REM Phase 3: $(PY) -m src.regime.regime_model --fit --config $(SMOKE)
+	@REM Phase 4: $(PY) -m src.models.train --config $(SMOKE)
+	@REM Phase 5: $(PY) -m src.backtest.tune --config $(SMOKE)
+	@REM Phase 5: $(PY) -m src.backtest.baselines --all --period validation --config $(SMOKE)
+	@REM Phase 6: $(PY) -m src.backtest.final_test --confirm --config $(SMOKE)
+	@REM Phase 6: $(PY) -m src.backtest.report --config $(SMOKE)
+	@REM Phase 7: $(PY) -m src.paper.daily_job --no-etl --run-id paper_replay --from 2025-01-02 --to 2025-03-31 --config $(SMOKE)
 
 etl-full:
 	$(PY) -m src.etl.pipeline --full-refresh --config $(CFG)
