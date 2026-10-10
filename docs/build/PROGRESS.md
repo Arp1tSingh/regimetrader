@@ -30,7 +30,7 @@ A model is eligible for strategy tuning only if **no single `prob_up` value hold
 
 - **tree fails both conditions → excluded from tuning**, but it stays in the classifier comparison, `classifier_metrics.csv`, the `model_year` trial rows and the diagnostics.
 - Third entry base per eligible model: **xgb reaches 0.52 on 60.0% of days → absolute 0.52**; **logreg (15.5%) and rf (13.9%) do not → their own validation p80** (0.5024, 0.5044). 0.55 and 0.60 kept for all.
-- **Grid = 3 eligible × 3 entry bases × 2 slots = 18 trials. Total logged trials = 27** (9 development + 18 grid). Upsert verified across repeated runs.
+- **Grid = 3 eligible × 3 entry bases × 2 slots = 18 trials. 27 trials after the grid** (9 development + 18). **30 logged in total** once T5.7 added its 3 baseline rows. Upsert verified across repeated runs.
 
 ### Tie-break reporting (step 4)
 
@@ -137,7 +137,7 @@ re-stated. Not decided unilaterally.
 | Date | Task | Result and notes |
 |---|---|---|
 | 2026-10-10 | **T5.6** | Eligibility rule (R31), per-model threshold method (R33) and tie-break reporting (R34) written and recorded **before** the grid ran. `scripts/tuning_plan.py` prints the plan and the step-5 stop condition; it came out clear (1 ineligible, 3 eligible). |
-| 2026-10-10 | **T5.6** | **Grid run, validation period only: 18 trials, 27 logged total.** Selected rf / 0.55 / 5 slots, Sharpe 2.5679. Upsert verified: repeated runs add no rows. **Every run has `tie_break_share = 0.0000`** — no alphabetical portfolio was produced anywhere. |
+| 2026-10-10 | **T5.6** | **Grid run, validation period only: 18 trials, 27 logged after the grid** (30 once T5.7 logged its 3 baselines as `kind="other"`, which the spec counts as trials). Selected rf / 0.55 / 5 slots, Sharpe 2.5679. Upsert verified: repeated runs add no rows. **Every run has `tie_break_share = 0.0000`** — no alphabetical portfolio was produced anywhere. |
 | 2026-10-10 | **T5.6** | **Bug fixed**: `total_logged_trials` was computed by adding the grid size to a count read *after* logging, and then again after a re-run, reporting 45 instead of 27. The count is now simply the post-run row count, which upsert makes idempotent. |
 | 2026-10-10 | **T5.6** | **The selected configuration is an artifact.** rf / 0.55 / 5 made **1 trade** (LT.NS, entered 2023-10-27) and held cash for 200 of 245 days; low volatility inflates Sharpe. The same model at its p80 entry trades 655 times for CAGR 0.207 against 0.046. A minimum-trade guard would fix the ranking but changes the selection rule after seeing the winner — **left for the human**, not decided unilaterally. |
 | 2026-10-10 | **T5.6** | **Bug found and corrected: the +2.44 classifier edge was wrong** (R36). It compared validation accuracy to a *training-period* baseline. Corrected edge for the tree is **+0.0001**; all four models are at or below the validation baseline of 0.5315. `classifier_metrics.csv` was not being written by any code path at all — `train.py` now writes it with the baseline computed on the same rows as the accuracy. |
@@ -209,7 +209,7 @@ re-stated. Not decided unilaterally.
 | Selected model, `entry_base`, `slots` (from validation) | **rf, `entry_base` 0.55, `slots` 5** — but this run has **1 trade**; see "The selection is an artifact" above, needs a human decision |
 | Strategy-tuning eligibility (R31) | **logreg, rf, xgb eligible; tree excluded** (76.4% of its rows tied at one `prob_up`, `p95 − p50 = 0.0000`) |
 | Classifier accuracy versus majority baseline (validation year 2023, n=12,044) | baseline **0.5315**. rf 0.5125 (−0.0190) · xgb 0.5059 (−0.0256) · logreg 0.4980 (−0.0335) · tree 0.5316 (**+0.0001**). **All four at or below baseline.** The earlier "+2.44" was a training-period baseline and is withdrawn (`DECISIONS` R36) |
-| Total trials logged | **real warehouse: 27** — 5 regime_k + 4 model_year + 18 strategy_grid (3 eligible models × 3 entry bases × 2 slots). Smoke warehouse: 12 more, all synthetic and not real results |
+| Total trials logged | **real warehouse: 30** — 5 regime_k + 4 model_year + 18 strategy_grid (3 eligible models × 3 entry bases × 2 slots) + 3 baselines (`kind="other"`). The 4 `calibration` rows are diagnostics and are excluded by the spec's counting rule. Smoke warehouse adds 12 more, all synthetic and not real results |
 | Validation backtest, strategy vs baselines | V2 (selected) Sharpe 2.568, CAGR **0.046**, 1 trade · B1 `^NSEI` 1.919, 0.195 · B2 equal weight 3.467, **0.389** · B3 trend **3.899**, 0.320. **Beaten on return by every baseline** |
 | Test period evaluated? (date, lock file) | **No.** Never touched. `final_test.py` has not been run and `TEST_RUN_LOCK.json` does not exist |
 | Headline test results (strategy vs B1) | |
