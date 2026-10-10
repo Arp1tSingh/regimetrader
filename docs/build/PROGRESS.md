@@ -6,9 +6,20 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 
 ## Current position
 
-- Phase: 2
-- Next task: T2.1
-- Last gate passed: **P1** (`make check && make smoke`, plus the `[REAL]` T1.8 full refresh). 206 fast tests, 215 with slow.
+- Phase: 3
+- Next task: T4.1 (Phase 3 complete)
+- Last gate passed: **P2** (`make check && make smoke`). 270 fast tests, 290 total.
+
+## Log
+
+| Date | Task | Result and notes |
+|---|---|---|
+| 2026-10-10 | T2.1 | `src/features/indicators.py` + `builder.py`: 14 `fact_indicator` columns, pure and trailing-only, always recomputed from full history. Real run wrote **140,583 rows** (137,685 EQUITY + 2,898 INDEX, zero VOLATILITY per DECISIONS R9) with 2,499 NULL `sma_50` warm-up rows. 23 tests including the `test_features_no_lookahead` truncation test at four cut points (rtol 1e-12). |
+| 2026-10-10 | T2.2 | `src/olap/run.py`: all 9 queries run, `-- param:` defaults parsed and typed, `--param` overrides honoured, query 06 regenerated from `olap.pivot_years`. Real run: 720 / 180 / 40 / 15 / 12 / 15 / 5 rows; 08 and 09 correctly empty before their phases. Query 02 verified equal to a hand aggregation of the source tables. 20 tests. |
+| 2026-10-10 | **Gate P2** | `make check && make smoke` passes. 270 fast tests, 290 total. |
+| 2026-10-10 | T3.1-T3.5 | `src/regime/regime_model.py`: market features, VIX `auto` decision, k-selection, fit on the training period only, trailing-mode smoothing, `fact_market_regime`, profile/counts CSV, k-selection and regime-band figures, saved model bundle. 34 tests including the `TESTS` section 5 worked example (distances 0.224 / 1.237 / 3.342) and the smoothing fixtures. |
+| 2026-10-10 | T3.2 (Q1 decision) | **k = 3 chosen, not the default 4.** On the real warehouse k=4 produced two clusters under 3% of training days (BEAR 22/1948 = 1.1%, BULL 49/1948 = 2.5%), which is exactly the "meaningless fragments" condition in `DECISIONS` Q1 and `L5`. k=3 gives BEAR 27 days (vol 0.72, VIX 57.2, drawdown -0.29), BULL 1,167 days (vol 0.12, VIX 15.4) and SIDEWAYS 754 days (vol 0.19, VIX 20.2), and **all three sanity checks pass on the real data**. Silhouette: k=2 0.771, k=3 0.362, k=4 0.364. `config.yaml` `regime.k` set to 3 with the reason recorded. |
+| 2026-10-10 | T3.4 | **Known limitation, recorded not hidden.** On the *synthetic* market the volatility sanity check cannot pass at k=3 or k=4. `TESTS` section 2 pins the four state volatilities to 0.007 / 0.006 / 0.015 / 0.018, which makes realised volatility bimodal: BULL and SIDEWAYS are nearly identical, so K-Means splits on volatility first and the two high-volatility clusters take the names BULL and BEAR (highest and lowest mean return). Their volatilities are then equal by construction (0.2604 vs 0.2594), so "BEAR volatility above BULL" fails by 0.4%. A cluster-versus-truth crosstab confirms the labels do not track the hidden states: the BULL cluster holds 0% of true BULL days. The same check passes on the real warehouse, where volatility is continuous. Per `04` section 5.4 the failure is warned about and recorded, **not** forced by renaming clusters. The check logic is unit-tested directly against hand-built profiles, both passing and failing. |
 
 ## Checklist
 
@@ -16,8 +27,10 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 **Phase 1 Warehouse and ETL:** [x] T1.1 [x] T1.2 [x] T1.3 [x] T1.4 [x] T1.5 [x] T1.6 [x] T1.7 [x] T1.8
 
 **Gate P1:** `make check && make smoke` plus the `[REAL]` T1.8 refresh. **PASSED.**
-**Phase 2 Indicators and OLAP:** [ ] T2.1 [ ] T2.2
-**Phase 3 Regimes:** [ ] T3.1 [ ] T3.2 [ ] T3.3 [ ] T3.4 [ ] T3.5
+**Phase 2 Indicators and OLAP:** [x] T2.1 [x] T2.2
+
+**Gate P2:** `make check && make smoke`. **PASSED.**
+**Phase 3 Regimes:** [x] T3.1 [x] T3.2 [x] T3.3 [x] T3.4 [x] T3.5
 **Phase 4 Classifiers:** [ ] T4.1 [ ] T4.2 [ ] T4.3 [ ] T4.4 [ ] T4.5
 **Phase 5 Strategy and backtest:** [ ] T5.1 [ ] T5.2 [ ] T5.3 [ ] T5.4 [ ] T5.5 [ ] T5.6 [ ] T5.7 [ ] T5.8
 **Phase 6 Final evaluation:** [ ] T6.1 [ ] T6.2 [ ] T6.3 [ ] T6.4

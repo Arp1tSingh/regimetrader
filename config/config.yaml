@@ -55,7 +55,7 @@ features:
   winsor_upper_pct: 99
 
 regime:
-  k: 4                                        # final k after reviewing the k-selection plots; log the decision
+  k: 3                                        # chosen in T3.2: k=4 split two clusters under 3% of training days. See PROGRESS.md and DECISIONS Q1/L5.
   k_range: [2, 3, 4, 5, 6]
   use_vix: auto                               # auto | true | false  (auto: use if coverage >= min_vix_coverage on the training period)
   min_vix_coverage: 0.95

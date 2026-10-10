@@ -1,0 +1,6 @@
+timestamp,phase,kind,run_id,model,params_json,period,metric,value,extra_json,selected,note
+2026-10-10T08:17:17+00:00,regime,regime_k,k2,,"{""features"":[""mkt_return_20d"",""mkt_vol_20d"",""india_vix"",""mkt_drawdown""],""k"":2,""use_vix"":true}",train,silhouette,0.7705639371650533,"{""inertia"":4809.359032680326,""n_days"":1948}",0,
+2026-10-10T08:17:17+00:00,regime,regime_k,k3,,"{""features"":[""mkt_return_20d"",""mkt_vol_20d"",""india_vix"",""mkt_drawdown""],""k"":3,""use_vix"":true}",train,silhouette,0.3619440904868917,"{""inertia"":3287.95611091266,""n_days"":1948}",0,
+2026-10-10T08:17:17+00:00,regime,regime_k,k4,,"{""features"":[""mkt_return_20d"",""mkt_vol_20d"",""india_vix"",""mkt_drawdown""],""k"":4,""use_vix"":true}",train,silhouette,0.36353205822422074,"{""inertia"":2582.11921370581,""n_days"":1948}",0,
+2026-10-10T08:17:17+00:00,regime,regime_k,k5,,"{""features"":[""mkt_return_20d"",""mkt_vol_20d"",""india_vix"",""mkt_drawdown""],""k"":5,""use_vix"":true}",train,silhouette,0.32027850726927815,"{""inertia"":2145.8401773467067,""n_days"":1948}",0,
+2026-10-10T08:17:17+00:00,regime,regime_k,k6,,"{""features"":[""mkt_return_20d"",""mkt_vol_20d"",""india_vix"",""mkt_drawdown""],""k"":6,""use_vix"":true}",train,silhouette,0.31615932619982495,"{""inertia"":1844.2612407588672,""n_days"":1948}",0,

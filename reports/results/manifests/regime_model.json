@@ -1,0 +1,26 @@
+{
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\regime\\regime_model.py --fit --k 3 --config config/config.yaml",
+  "config_hash": "22dfa4b3e6b6",
+  "data_range": {
+    "first_date_key": 20150102,
+    "last_date_key": 20261009
+  },
+  "extra": {
+    "days": 2878,
+    "k": 3,
+    "sanity_failures": [],
+    "use_vix": true
+  },
+  "git_commit": "b9beeb91dff5062827b4d624230aaf2537b7d904",
+  "models_used": [],
+  "package_versions": {
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "python": "3.14.8",
+    "scikit-learn": "1.9.1",
+    "xgboost": "3.4.1"
+  },
+  "run_id": "regime_model",
+  "seed": 42,
+  "timestamp": "2026-10-10T08:18:27+00:00"
+}
