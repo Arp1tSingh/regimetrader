@@ -1,0 +1,721 @@
+year,quarter,sector,avg_daily_return_pct,observations
+2015,1,Auto,0.015,300
+2015,1,Banking,-0.022,300
+2015,1,Consumer Durables,0.078,120
+2015,1,Consumer Services,0.01,60
+2015,1,Energy,-0.09,180
+2015,1,FMCG,0.057,240
+2015,1,Financial Services,0.19,180
+2015,1,IT,0.124,240
+2015,1,Infrastructure,0.248,120
+2015,1,Materials,0.091,120
+2015,1,Metals and Mining,-0.15,240
+2015,1,Pharma and Healthcare,0.279,240
+2015,1,Power,0.076,120
+2015,1,Services,-0.036,60
+2015,1,Telecom,0.153,60
+2015,2,Auto,0.144,300
+2015,2,Banking,0.044,300
+2015,2,Consumer Durables,-0.095,120
+2015,2,Consumer Services,-0.411,60
+2015,2,Energy,0.22,180
+2015,2,FMCG,-0.047,240
+2015,2,Financial Services,0.08,180
+2015,2,IT,-0.161,240
+2015,2,Infrastructure,0.055,120
+2015,2,Materials,0.004,120
+2015,2,Metals and Mining,-0.285,240
+2015,2,Pharma and Healthcare,-0.109,240
+2015,2,Power,-0.082,120
+2015,2,Services,0.031,60
+2015,2,Telecom,0.125,60
+2015,3,Auto,-0.099,320
+2015,3,Banking,-0.103,320
+2015,3,Consumer Durables,-0.002,128
+2015,3,Consumer Services,0.256,64
+2015,3,Energy,-0.34,192
+2015,3,FMCG,-0.02,256
+2015,3,Financial Services,0.107,192
+2015,3,IT,0.18,256
+2015,3,Infrastructure,-0.108,128
+2015,3,Materials,-0.051,128
+2015,3,Metals and Mining,-0.27,256
+2015,3,Pharma and Healthcare,0.134,256
+2015,3,Power,-0.086,128
+2015,3,Services,-0.015,64
+2015,3,Telecom,-0.314,64
+2015,4,Auto,0.115,300
+2015,4,Banking,-0.014,300
+2015,4,Consumer Durables,0.127,120
+2015,4,Consumer Services,0.508,60
+2015,4,Energy,0.148,180
+2015,4,FMCG,0.057,240
+2015,4,Financial Services,0.138,180
+2015,4,IT,-0.111,240
+2015,4,Infrastructure,0.051,120
+2015,4,Materials,0.093,120
+2015,4,Metals and Mining,0.262,240
+2015,4,Pharma and Healthcare,-0.108,240
+2015,4,Power,0.2,120
+2015,4,Services,0.264,94
+2015,4,Telecom,0.024,60
+2016,1,Auto,-0.032,300
+2016,1,Banking,-0.079,300
+2016,1,Consumer Durables,-0.008,120
+2016,1,Consumer Services,-0.131,60
+2016,1,Energy,-0.037,180
+2016,1,FMCG,-0.06,240
+2016,1,Financial Services,0.086,180
+2016,1,IT,0.013,240
+2016,1,Infrastructure,-0.106,120
+2016,1,Materials,0.155,120
+2016,1,Metals and Mining,0.191,240
+2016,1,Pharma and Healthcare,-0.13,240
+2016,1,Power,-0.085,120
+2016,1,Services,-0.263,120
+2016,1,Telecom,0.063,60
+2016,2,Auto,0.2,310
+2016,2,Banking,0.199,310
+2016,2,Consumer Durables,0.275,124
+2016,2,Consumer Services,0.228,62
+2016,2,Energy,0.012,186
+2016,2,FMCG,0.168,248
+2016,2,Financial Services,0.39,186
+2016,2,IT,-0.004,248
+2016,2,Infrastructure,0.216,124
+2016,2,Materials,0.209,124
+2016,2,Metals and Mining,0.286,248
+2016,2,Pharma and Healthcare,0.011,248
+2016,2,Power,0.293,124
+2016,2,Services,0.008,124
+2016,2,Telecom,0.091,62
+2016,3,Auto,0.251,305
+2016,3,Banking,0.113,305
+2016,3,Consumer Durables,0.108,122
+2016,3,Consumer Services,0.277,61
+2016,3,Energy,0.188,183
+2016,3,FMCG,0.018,244
+2016,3,Financial Services,0.315,183
+2016,3,IT,-0.085,244
+2016,3,Infrastructure,-0.022,122
+2016,3,Materials,0.152,122
+2016,3,Metals and Mining,0.143,244
+2016,3,Pharma and Healthcare,0.028,244
+2016,3,Power,0.046,122
+2016,3,Services,0.134,122
+2016,3,Telecom,-0.234,61
+2016,4,Auto,-0.152,305
+2016,4,Banking,-0.086,305
+2016,4,Consumer Durables,-0.349,122
+2016,4,Consumer Services,-0.08,61
+2016,4,Energy,0.041,183
+2016,4,FMCG,-0.083,244
+2016,4,Financial Services,-0.288,183
+2016,4,IT,0.076,244
+2016,4,Infrastructure,0.043,122
+2016,4,Materials,-0.214,122
+2016,4,Metals and Mining,0.089,244
+2016,4,Pharma and Healthcare,-0.11,244
+2016,4,Power,0.13,122
+2016,4,Services,-0.03,122
+2016,4,Telecom,-0.03,61
+2017,1,Auto,0.145,310
+2017,1,Banking,0.236,310
+2017,1,Consumer Durables,0.446,124
+2017,1,Consumer Services,0.503,62
+2017,1,Energy,0.126,186
+2017,1,FMCG,0.235,248
+2017,1,Financial Services,0.387,225
+2017,1,IT,0.027,248
+2017,1,Infrastructure,0.247,124
+2017,1,Materials,0.335,124
+2017,1,Metals and Mining,0.402,248
+2017,1,Pharma and Healthcare,-0.004,248
+2017,1,Power,0.09,124
+2017,1,Services,0.406,124
+2017,1,Telecom,0.234,62
+2017,2,Auto,0.076,305
+2017,2,Banking,0.132,305
+2017,2,Consumer Durables,0.152,122
+2017,2,Consumer Services,-0.187,61
+2017,2,Energy,-0.156,183
+2017,2,FMCG,0.154,244
+2017,2,Financial Services,0.092,244
+2017,2,IT,-0.11,244
+2017,2,Infrastructure,0.093,122
+2017,2,Materials,0.145,122
+2017,2,Metals and Mining,0.198,244
+2017,2,Pharma and Healthcare,-0.056,244
+2017,2,Power,0.025,122
+2017,2,Services,0.161,122
+2017,2,Telecom,0.144,61
+2017,3,Auto,0.089,315
+2017,3,Banking,0.009,315
+2017,3,Consumer Durables,0.122,126
+2017,3,Consumer Services,0.378,63
+2017,3,Energy,0.182,189
+2017,3,FMCG,0.126,252
+2017,3,Financial Services,0.217,252
+2017,3,IT,0.101,252
+2017,3,Infrastructure,0.13,126
+2017,3,Materials,0.125,126
+2017,3,Metals and Mining,0.224,252
+2017,3,Pharma and Healthcare,-0.141,252
+2017,3,Power,0.073,126
+2017,3,Services,0.017,126
+2017,3,Telecom,0.054,63
+2017,4,Auto,0.168,310
+2017,4,Banking,0.178,310
+2017,4,Consumer Durables,0.355,124
+2017,4,Consumer Services,0.231,62
+2017,4,Energy,0.163,186
+2017,4,FMCG,0.292,248
+2017,4,Financial Services,0.114,340
+2017,4,IT,0.164,248
+2017,4,Infrastructure,0.178,124
+2017,4,Materials,0.125,124
+2017,4,Metals and Mining,0.294,248
+2017,4,Pharma and Healthcare,0.168,248
+2017,4,Power,0.01,124
+2017,4,Services,0.147,124
+2017,4,Telecom,0.527,62
+2018,1,Auto,-0.209,295
+2018,1,Banking,-0.119,295
+2018,1,Consumer Durables,0.061,118
+2018,1,Consumer Services,0.057,59
+2018,1,Energy,0.017,177
+2018,1,FMCG,-0.082,236
+2018,1,Financial Services,-0.005,354
+2018,1,IT,0.209,236
+2018,1,Infrastructure,-0.156,118
+2018,1,Materials,-0.15,118
+2018,1,Metals and Mining,-0.156,236
+2018,1,Pharma and Healthcare,-0.205,236
+2018,1,Power,-0.036,118
+2018,1,Services,-0.041,118
+2018,1,Telecom,-0.448,59
+2018,2,Auto,0.021,320
+2018,2,Banking,0.137,320
+2018,2,Consumer Durables,0.054,128
+2018,2,Consumer Services,-0.196,64
+2018,2,Energy,-0.032,192
+2018,2,FMCG,0.212,256
+2018,2,Financial Services,0.115,384
+2018,2,IT,0.179,256
+2018,2,Infrastructure,-0.212,128
+2018,2,Materials,-0.051,128
+2018,2,Metals and Mining,0.045,256
+2018,2,Pharma and Healthcare,0.14,256
+2018,2,Power,-0.068,128
+2018,2,Services,-0.069,128
+2018,2,Telecom,-0.051,64
+2018,3,Auto,-0.174,305
+2018,3,Banking,0.047,305
+2018,3,Consumer Durables,-0.036,122
+2018,3,Consumer Services,0.181,61
+2018,3,Energy,0.223,183
+2018,3,FMCG,-0.008,244
+2018,3,Financial Services,-0.18,366
+2018,3,IT,0.254,244
+2018,3,Infrastructure,-0.199,122
+2018,3,Materials,0.085,122
+2018,3,Metals and Mining,0.372,244
+2018,3,Pharma and Healthcare,0.144,244
+2018,3,Power,0.077,122
+2018,3,Services,-0.296,122
+2018,3,Telecom,-0.167,61
+2018,4,Auto,-0.085,305
+2018,4,Banking,0.163,305
+2018,4,Consumer Durables,0.19,122
+2018,4,Consumer Services,0.153,61
+2018,4,Energy,-0.169,183
+2018,4,FMCG,0.075,244
+2018,4,Financial Services,0.129,366
+2018,4,IT,-0.135,244
+2018,4,Infrastructure,0.199,122
+2018,4,Materials,-0.167,122
+2018,4,Metals and Mining,-0.028,244
+2018,4,Pharma and Healthcare,-0.129,244
+2018,4,Power,-0.04,122
+2018,4,Services,0.456,122
+2018,4,Telecom,-0.079,61
+2019,1,Auto,-0.098,295
+2019,1,Banking,0.199,295
+2019,1,Consumer Durables,0.248,118
+2019,1,Consumer Services,0.041,59
+2019,1,Energy,0.173,177
+2019,1,FMCG,-0.038,236
+2019,1,Financial Services,0.082,354
+2019,1,IT,0.162,236
+2019,1,Infrastructure,0.037,118
+2019,1,Materials,0.002,118
+2019,1,Metals and Mining,-0.126,236
+2019,1,Pharma and Healthcare,0.054,236
+2019,1,Power,0.135,118
+2019,1,Services,0.2,118
+2019,1,Telecom,0.113,59
+2019,2,Auto,-0.042,300
+2019,2,Banking,0.147,300
+2019,2,Consumer Durables,0.069,120
+2019,2,Consumer Services,0.323,60
+2019,2,Energy,0.046,180
+2019,2,FMCG,0.173,240
+2019,2,Financial Services,0.204,360
+2019,2,IT,0.017,240
+2019,2,Infrastructure,0.28,120
+2019,2,Materials,0.225,120
+2019,2,Metals and Mining,0.066,240
+2019,2,Pharma and Healthcare,-0.002,240
+2019,2,Power,0.077,120
+2019,2,Services,0.151,120
+2019,2,Telecom,0.244,60
+2019,3,Auto,-0.105,310
+2019,3,Banking,-0.088,310
+2019,3,Consumer Durables,0.201,124
+2019,3,Consumer Services,0.179,62
+2019,3,Energy,-0.193,186
+2019,3,FMCG,0.112,248
+2019,3,Financial Services,0.143,372
+2019,3,IT,0.047,248
+2019,3,Infrastructure,-0.015,124
+2019,3,Materials,-0.183,124
+2019,3,Metals and Mining,-0.204,248
+2019,3,Pharma and Healthcare,-0.058,248
+2019,3,Power,-0.139,124
+2019,3,Services,0.191,124
+2019,3,Telecom,0.115,62
+2019,4,Auto,0.313,300
+2019,4,Banking,0.207,300
+2019,4,Consumer Durables,-0.034,120
+2019,4,Consumer Services,0.157,60
+2019,4,Energy,0.102,180
+2019,4,FMCG,0.053,240
+2019,4,Financial Services,0.092,360
+2019,4,IT,0.05,240
+2019,4,Infrastructure,-0.163,120
+2019,4,Materials,-0.026,120
+2019,4,Metals and Mining,0.404,240
+2019,4,Pharma and Healthcare,0.144,240
+2019,4,Power,-0.021,120
+2019,4,Services,-0.37,120
+2019,4,Telecom,0.399,60
+2020,1,Auto,-0.905,315
+2020,1,Banking,-0.67,315
+2020,1,Consumer Durables,-0.198,126
+2020,1,Consumer Services,-0.016,63
+2020,1,Energy,-0.542,189
+2020,1,FMCG,0.006,252
+2020,1,Financial Services,-0.734,378
+2020,1,IT,-0.281,252
+2020,1,Infrastructure,-0.497,126
+2020,1,Materials,-0.452,126
+2020,1,Metals and Mining,-0.855,252
+2020,1,Pharma and Healthcare,-0.138,252
+2020,1,Power,-0.343,126
+2020,1,Services,-0.403,126
+2020,1,Telecom,0.002,63
+2020,2,Auto,0.711,295
+2020,2,Banking,0.185,295
+2020,2,Consumer Durables,0.067,118
+2020,2,Consumer Services,0.473,59
+2020,2,Energy,0.359,177
+2020,2,FMCG,0.209,236
+2020,2,Financial Services,0.474,354
+2020,2,IT,0.245,236
+2020,2,Infrastructure,0.322,118
+2020,2,Materials,0.417,118
+2020,2,Metals and Mining,0.485,236
+2020,2,Pharma and Healthcare,0.511,236
+2020,2,Power,0.217,118
+2020,2,Services,0.256,118
+2020,2,Telecom,0.451,59
+2020,3,Auto,0.281,330
+2020,3,Banking,0.033,330
+2020,3,Consumer Durables,0.322,132
+2020,3,Consumer Services,0.166,66
+2020,3,Energy,0.006,198
+2020,3,FMCG,0.035,264
+2020,3,Financial Services,0.111,396
+2020,3,IT,0.499,264
+2020,3,Infrastructure,0.067,132
+2020,3,Materials,0.196,132
+2020,3,Metals and Mining,0.554,264
+2020,3,Pharma and Healthcare,0.386,293
+2020,3,Power,-0.085,132
+2020,3,Services,0.205,132
+2020,3,Telecom,-0.4,66
+2020,4,Auto,0.323,310
+2020,4,Banking,0.646,310
+2020,4,Consumer Durables,0.497,124
+2020,4,Consumer Services,0.06,62
+2020,4,Energy,0.234,186
+2020,4,FMCG,0.282,248
+2020,4,Financial Services,0.525,372
+2020,4,IT,0.328,248
+2020,4,Infrastructure,0.507,124
+2020,4,Materials,0.406,124
+2020,4,Metals and Mining,0.718,248
+2020,4,Pharma and Healthcare,0.195,310
+2020,4,Power,0.287,124
+2020,4,Services,0.571,124
+2020,4,Telecom,0.329,62
+2021,1,Auto,0.222,305
+2021,1,Banking,0.158,305
+2021,1,Consumer Durables,-0.058,122
+2021,1,Consumer Services,0.18,61
+2021,1,Energy,0.091,183
+2021,1,FMCG,0.051,244
+2021,1,Financial Services,0.104,366
+2021,1,IT,0.12,244
+2021,1,Infrastructure,0.157,122
+2021,1,Materials,0.588,122
+2021,1,Metals and Mining,0.654,244
+2021,1,Pharma and Healthcare,0.167,305
+2021,1,Power,0.226,122
+2021,1,Services,0.291,122
+2021,1,Telecom,0.043,61
+2021,2,Auto,0.127,305
+2021,2,Banking,0.108,305
+2021,2,Consumer Durables,0.242,122
+2021,2,Consumer Services,0.218,61
+2021,2,Energy,0.189,183
+2021,2,FMCG,0.082,244
+2021,2,Financial Services,0.275,366
+2021,2,IT,0.142,244
+2021,2,Infrastructure,0.357,122
+2021,2,Materials,0.044,122
+2021,2,Metals and Mining,0.567,244
+2021,2,Pharma and Healthcare,0.315,305
+2021,2,Power,0.148,122
+2021,2,Services,0.086,122
+2021,2,Telecom,0.036,61
+2021,3,Auto,0.016,315
+2021,3,Banking,0.147,315
+2021,3,Consumer Durables,0.251,126
+2021,3,Consumer Services,0.289,111
+2021,3,Energy,0.359,189
+2021,3,FMCG,0.172,252
+2021,3,Financial Services,0.33,378
+2021,3,IT,0.292,252
+2021,3,Infrastructure,0.231,126
+2021,3,Materials,0.172,126
+2021,3,Metals and Mining,0.163,252
+2021,3,Pharma and Healthcare,0.237,315
+2021,3,Power,0.274,126
+2021,3,Services,0.185,126
+2021,3,Telecom,0.478,63
+2021,4,Auto,0.086,315
+2021,4,Banking,-0.061,315
+2021,4,Consumer Durables,0.176,126
+2021,4,Consumer Services,0.067,126
+2021,4,Energy,-0.094,189
+2021,4,FMCG,-0.1,252
+2021,4,Financial Services,0.049,378
+2021,4,IT,0.183,252
+2021,4,Infrastructure,0.13,126
+2021,4,Materials,0.011,126
+2021,4,Metals and Mining,0.01,252
+2021,4,Pharma and Healthcare,0.12,315
+2021,4,Power,-0.004,126
+2021,4,Services,0.021,126
+2021,4,Telecom,0.002,63
+2022,1,Auto,0.005,305
+2022,1,Banking,0.066,305
+2022,1,Consumer Durables,-0.053,122
+2022,1,Consumer Services,-0.204,122
+2022,1,Energy,0.312,183
+2022,1,FMCG,-0.01,244
+2022,1,Financial Services,0.08,366
+2022,1,IT,-0.099,244
+2022,1,Infrastructure,-0.022,122
+2022,1,Materials,-0.067,122
+2022,1,Metals and Mining,0.289,244
+2022,1,Pharma and Healthcare,-0.085,305
+2022,1,Power,0.176,122
+2022,1,Services,0.085,122
+2022,1,Telecom,0.177,61
+2022,2,Auto,0.196,310
+2022,2,Banking,-0.109,310
+2022,2,Consumer Durables,-0.297,124
+2022,2,Consumer Services,-0.415,124
+2022,2,Energy,-0.012,186
+2022,2,FMCG,0.064,248
+2022,2,Financial Services,-0.259,372
+2022,2,IT,-0.364,248
+2022,2,Infrastructure,0.002,124
+2022,2,Materials,-0.301,124
+2022,2,Metals and Mining,-0.383,248
+2022,2,Pharma and Healthcare,-0.086,310
+2022,2,Power,0.045,124
+2022,2,Services,-0.266,124
+2022,2,Telecom,-0.146,62
+2022,3,Auto,0.147,315
+2022,3,Banking,0.207,315
+2022,3,Consumer Durables,0.42,126
+2022,3,Consumer Services,0.4,126
+2022,3,Energy,-0.029,189
+2022,3,FMCG,0.249,252
+2022,3,Financial Services,0.229,378
+2022,3,IT,-0.031,252
+2022,3,Infrastructure,0.369,126
+2022,3,Materials,0.296,126
+2022,3,Metals and Mining,0.372,252
+2022,3,Pharma and Healthcare,0.208,315
+2022,3,Power,0.125,126
+2022,3,Services,0.295,126
+2022,3,Telecom,0.265,63
+2022,4,Auto,-0.058,310
+2022,4,Banking,0.19,310
+2022,4,Consumer Durables,-0.059,124
+2022,4,Consumer Services,-0.047,124
+2022,4,Energy,0.215,186
+2022,4,FMCG,-0.018,248
+2022,4,Financial Services,-0.017,372
+2022,4,IT,0.131,248
+2022,4,Infrastructure,0.1,124
+2022,4,Materials,0.117,124
+2022,4,Metals and Mining,0.273,248
+2022,4,Pharma and Healthcare,0.039,310
+2022,4,Power,0.067,124
+2022,4,Services,0.078,124
+2022,4,Telecom,0.019,62
+2023,1,Auto,0.002,310
+2023,1,Banking,-0.096,310
+2023,1,Consumer Durables,-0.108,124
+2023,1,Consumer Services,-0.079,124
+2023,1,Energy,-0.024,186
+2023,1,FMCG,0.041,248
+2023,1,Financial Services,-0.227,372
+2023,1,IT,0.044,248
+2023,1,Infrastructure,0.034,124
+2023,1,Materials,0.036,124
+2023,1,Metals and Mining,-0.357,248
+2023,1,Pharma and Healthcare,-0.037,310
+2023,1,Power,0.13,124
+2023,1,Services,-0.186,124
+2023,1,Telecom,-0.111,62
+2023,2,Auto,0.393,300
+2023,2,Banking,0.153,300
+2023,2,Consumer Durables,0.334,120
+2023,2,Consumer Services,0.547,120
+2023,2,Energy,0.132,180
+2023,2,FMCG,0.256,240
+2023,2,Financial Services,0.446,360
+2023,2,IT,0.057,240
+2023,2,Infrastructure,0.333,120
+2023,2,Materials,0.126,120
+2023,2,Metals and Mining,0.264,240
+2023,2,Pharma and Healthcare,0.267,300
+2023,2,Power,0.173,120
+2023,2,Services,0.408,120
+2023,2,Telecom,0.272,60
+2023,3,Auto,0.097,315
+2023,3,Banking,-0.011,315
+2023,3,Consumer Durables,-0.015,126
+2023,3,Consumer Services,0.39,126
+2023,3,Energy,0.245,189
+2023,3,FMCG,-0.033,252
+2023,3,Financial Services,0.232,407
+2023,3,IT,0.126,252
+2023,3,Infrastructure,0.259,126
+2023,3,Materials,0.1,126
+2023,3,Metals and Mining,0.136,252
+2023,3,Pharma and Healthcare,0.11,315
+2023,3,Power,0.281,126
+2023,3,Services,0.028,126
+2023,3,Telecom,0.096,63
+2023,4,Auto,0.267,300
+2023,4,Banking,0.135,300
+2023,4,Consumer Durables,0.197,120
+2023,4,Consumer Services,0.508,120
+2023,4,Energy,0.278,180
+2023,4,FMCG,0.218,240
+2023,4,Financial Services,0.199,420
+2023,4,IT,0.172,240
+2023,4,Infrastructure,0.378,120
+2023,4,Materials,0.287,120
+2023,4,Metals and Mining,0.263,240
+2023,4,Pharma and Healthcare,0.166,300
+2023,4,Power,0.375,120
+2023,4,Services,0.388,120
+2023,4,Telecom,0.185,60
+2024,1,Auto,0.287,300
+2024,1,Banking,-0.001,300
+2024,1,Consumer Durables,-0.113,120
+2024,1,Consumer Services,0.573,120
+2024,1,Energy,0.343,180
+2024,1,FMCG,-0.084,240
+2024,1,Financial Services,0.186,420
+2024,1,IT,0.029,240
+2024,1,Infrastructure,0.152,120
+2024,1,Materials,0.01,120
+2024,1,Metals and Mining,0.051,240
+2024,1,Pharma and Healthcare,0.281,300
+2024,1,Power,0.236,120
+2024,1,Services,0.392,120
+2024,1,Telecom,0.301,60
+2024,2,Auto,0.199,300
+2024,2,Banking,0.218,300
+2024,2,Consumer Durables,-0.049,120
+2024,2,Consumer Services,0.375,120
+2024,2,Energy,0.122,180
+2024,2,FMCG,0.047,240
+2024,2,Financial Services,0.057,420
+2024,2,IT,0.082,240
+2024,2,Infrastructure,0.355,120
+2024,2,Materials,0.293,120
+2024,2,Metals and Mining,0.221,240
+2024,2,Pharma and Healthcare,0.04,300
+2024,2,Power,0.285,120
+2024,2,Services,0.278,120
+2024,2,Telecom,0.285,60
+2024,3,Auto,0.176,320
+2024,3,Banking,0.015,320
+2024,3,Consumer Durables,0.203,128
+2024,3,Consumer Services,0.526,128
+2024,3,Energy,0.079,192
+2024,3,FMCG,0.21,256
+2024,3,Financial Services,0.301,448
+2024,3,IT,0.246,256
+2024,3,Infrastructure,-0.012,128
+2024,3,Materials,0.062,128
+2024,3,Metals and Mining,0.074,256
+2024,3,Pharma and Healthcare,0.202,320
+2024,3,Power,0.198,128
+2024,3,Services,0.092,128
+2024,3,Telecom,0.282,64
+2024,4,Auto,-0.269,310
+2024,4,Banking,-0.037,310
+2024,4,Consumer Durables,-0.422,124
+2024,4,Consumer Services,-0.011,124
+2024,4,Energy,-0.332,186
+2024,4,FMCG,-0.306,248
+2024,4,Financial Services,-0.16,434
+2024,4,IT,0.064,248
+2024,4,Infrastructure,0.023,124
+2024,4,Materials,-0.125,124
+2024,4,Metals and Mining,-0.282,248
+2024,4,Pharma and Healthcare,0.038,310
+2024,4,Power,-0.31,124
+2024,4,Services,-0.142,124
+2024,4,Telecom,-0.11,62
+2025,1,Auto,-0.033,310
+2025,1,Banking,0.1,310
+2025,1,Consumer Durables,-0.017,124
+2025,1,Consumer Services,-0.445,124
+2025,1,Energy,0.093,186
+2025,1,FMCG,0.006,248
+2025,1,Financial Services,0.176,434
+2025,1,IT,-0.247,248
+2025,1,Infrastructure,0.022,124
+2025,1,Materials,0.073,124
+2025,1,Metals and Mining,0.142,248
+2025,1,Pharma and Healthcare,-0.13,310
+2025,1,Power,0.041,124
+2025,1,Services,0.079,124
+2025,1,Telecom,0.152,62
+2025,2,Auto,0.152,305
+2025,2,Banking,0.119,305
+2025,2,Consumer Durables,0.168,122
+2025,2,Consumer Services,0.385,122
+2025,2,Energy,0.088,183
+2025,2,FMCG,0.111,244
+2025,2,Financial Services,0.322,427
+2025,2,IT,0.125,244
+2025,2,Infrastructure,0.34,122
+2025,2,Materials,0.121,122
+2025,2,Metals and Mining,0.087,244
+2025,2,Pharma and Healthcare,0.135,305
+2025,2,Power,-0.016,122
+2025,2,Services,0.318,122
+2025,2,Telecom,0.252,61
+2025,3,Auto,0.198,320
+2025,3,Banking,-0.054,320
+2025,3,Consumer Durables,-0.06,128
+2025,3,Consumer Services,-0.038,128
+2025,3,Energy,-0.039,192
+2025,3,FMCG,0.014,256
+2025,3,Financial Services,-0.123,448
+2025,3,IT,-0.251,256
+2025,3,Infrastructure,-0.026,128
+2025,3,Materials,-0.004,128
+2025,3,Metals and Mining,0.099,256
+2025,3,Pharma and Healthcare,-0.054,320
+2025,3,Power,-0.025,128
+2025,3,Services,-0.068,128
+2025,3,Telecom,-0.087,64
+2025,4,Auto,-0.08,310
+2025,4,Banking,0.124,310
+2025,4,Consumer Durables,0.291,124
+2025,4,Consumer Services,-0.186,124
+2025,4,Energy,0.122,186
+2025,4,FMCG,0.043,248
+2025,4,Financial Services,0.213,434
+2025,4,IT,0.225,248
+2025,4,Infrastructure,0.086,124
+2025,4,Materials,-0.003,124
+2025,4,Metals and Mining,0.061,248
+2025,4,Pharma and Healthcare,0.008,310
+2025,4,Power,-0.048,124
+2025,4,Services,-0.034,124
+2025,4,Telecom,0.191,62
+2026,1,Auto,-0.29,295
+2026,1,Banking,-0.23,295
+2026,1,Consumer Durables,-0.215,118
+2026,1,Consumer Services,-0.636,118
+2026,1,Energy,0.115,177
+2026,1,FMCG,-0.277,236
+2026,1,Financial Services,-0.265,413
+2026,1,IT,-0.35,236
+2026,1,Infrastructure,-0.1,118
+2026,1,Materials,-0.146,118
+2026,1,Metals and Mining,-0.064,236
+2026,1,Pharma and Healthcare,-0.066,295
+2026,1,Power,0.223,118
+2026,1,Services,-0.277,118
+2026,1,Telecom,-0.274,59
+2026,2,Auto,0.201,300
+2026,2,Banking,0.196,300
+2026,2,Consumer Durables,0.277,120
+2026,2,Consumer Services,0.481,120
+2026,2,Energy,-0.127,180
+2026,2,FMCG,0.14,240
+2026,2,Financial Services,0.23,420
+2026,2,IT,-0.195,240
+2026,2,Infrastructure,0.183,120
+2026,2,Materials,0.209,120
+2026,2,Metals and Mining,0.314,240
+2026,2,Pharma and Healthcare,0.227,300
+2026,2,Power,-0.052,120
+2026,2,Services,0.554,120
+2026,2,Telecom,0.074,60
+2026,3,Auto,-0.073,325
+2026,3,Banking,-0.068,325
+2026,3,Consumer Durables,-0.03,130
+2026,3,Consumer Services,-0.009,130
+2026,3,Energy,-0.059,195
+2026,3,FMCG,-0.144,260
+2026,3,Financial Services,-0.11,455
+2026,3,IT,0.119,260
+2026,3,Infrastructure,-0.111,130
+2026,3,Materials,-0.003,130
+2026,3,Metals and Mining,-0.006,260
+2026,3,Pharma and Healthcare,-0.129,325
+2026,3,Power,-0.132,130
+2026,3,Services,-0.047,130
+2026,3,Telecom,-0.052,65
+2026,4,Auto,-0.802,30
+2026,4,Banking,0.36,30
+2026,4,Consumer Durables,-0.533,12
+2026,4,Consumer Services,0.941,12
+2026,4,Energy,-0.359,18
+2026,4,FMCG,0.077,24
+2026,4,Financial Services,0.141,42
+2026,4,IT,0.225,24
+2026,4,Infrastructure,-0.556,12
+2026,4,Materials,-0.779,12
+2026,4,Metals and Mining,-1.104,24
+2026,4,Pharma and Healthcare,-0.53,30
+2026,4,Power,-0.636,12
+2026,4,Services,-0.666,12
+2026,4,Telecom,0.461,6

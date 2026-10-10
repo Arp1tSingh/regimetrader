@@ -1,0 +1,13 @@
+year,quarter,sector,avg_daily_return_pct
+2023,1,Banking,-0.096
+2023,1,IT,0.044
+2023,2,Banking,0.153
+2023,2,IT,0.057
+2024,1,Banking,-0.001
+2024,1,IT,0.029
+2024,2,Banking,0.218
+2024,2,IT,0.082
+2025,1,Banking,0.1
+2025,1,IT,-0.247
+2025,2,Banking,0.119
+2025,2,IT,0.125

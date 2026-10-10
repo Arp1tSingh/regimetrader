@@ -45,8 +45,8 @@ test:
 smoke:
 	$(SMOKE_CLEAN)
 	$(PY) -m src.etl.pipeline --full-refresh --config $(SMOKE)
-	@REM Phase 2: $(PY) -m src.features.builder --indicators --config $(SMOKE)
-	@REM Phase 2: $(PY) -m src.olap.run --all --config $(SMOKE)
+	$(PY) -m src.features.builder --indicators --config $(SMOKE)
+	$(PY) -m src.olap.run --all --config $(SMOKE)
 	@REM Phase 3: $(PY) -m src.regime.regime_model --fit --config $(SMOKE)
 	@REM Phase 4: $(PY) -m src.models.train --config $(SMOKE)
 	@REM Phase 5: $(PY) -m src.backtest.tune --config $(SMOKE)
