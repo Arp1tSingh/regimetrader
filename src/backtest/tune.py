@@ -125,16 +125,23 @@ def _null_percentile(
     actual = float(row["sharpe"])
     selectable = bool(_is_finite(p90) and _is_finite(actual) and actual > p90)
 
-    for sim_sharpe in sharpes:
+    for sim_index, sim_sharpe in enumerate(sharpes):
         log_trial(
             cfg,
             phase="tune",
             kind="other",  # `07` section 4 pins kind to the five listed values
-            run_id=f"null_{row['model']}_{row['entry_base']:.4f}_{int(row['slots'])}",
+            # The simulation index belongs in the key: upsert is on
+            # (kind, run_id, model, params_json, period), so without it every
+            # simulation of a configuration collapses into a single row.
+            run_id=(
+                f"null_{row['model']}_{row['entry_base']:.4f}_{int(row['slots'])}"
+                f"_sim{sim_index}"
+            ),
             model=str(row["model"]),
             params={
                 "entry_base": float(row["entry_base"]),
                 "slots": int(row["slots"]),
+                "sim": int(sim_index),
                 "null": "b4_symbol_permutation",
             },
             period="validation",

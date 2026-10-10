@@ -1,18 +1,19 @@
 {
   "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\backtest\\tune.py --config config/config.yaml",
-  "config_hash": "e458e3b9db8d",
+  "config_hash": "ea908079b21d",
   "data_range": {
     "first_date_key": 20150102,
     "last_date_key": 20261009
   },
   "extra": {
-    "entry_base": 0.55,
-    "method": "mixed",
+    "entry_base": 0.504415,
+    "method": "activity_and_null_filtered",
+    "outcome": "selected",
     "selected_model": "rf",
-    "slots": 5,
+    "slots": 10,
     "trials": 18
   },
-  "git_commit": "fae38050b5e94c39a7eb98ad6445083ac2ffe723",
+  "git_commit": "1ca746af3da45adff32137cff1d9b03f999458a6",
   "models_used": [],
   "package_versions": {
     "numpy": "2.5.3",
@@ -23,5 +24,5 @@
   },
   "run_id": "tune",
   "seed": 42,
-  "timestamp": "2026-10-10T11:17:41+00:00"
+  "timestamp": "2026-10-10T12:52:52+00:00"
 }

@@ -12,9 +12,25 @@ from src.trading.rules import build_regime_rules, is_stopped_out, target_weights
 
 
 def cfg() -> dict[str, Any]:
+    """The base config with the strategy keys pinned to the spec's starting settings.
+
+    `paths.frozen_config` is applied as a last overlay on the base, so the live
+    `entry_base` and `slots` change every time tuning runs. These tests assert the
+    rule *logic* against fixed values, so the overlay is stripped here rather than
+    letting every tuning run silently rewrite the expected numbers.
+    """
     from src.common.config import load_config
 
-    return load_config(str(Path(__file__).resolve().parents[1] / "config" / "config.yaml"))
+    loaded = load_config(str(Path(__file__).resolve().parents[1] / "config" / "config.yaml"))
+    return {
+        **loaded,
+        "strategy": {
+            **loaded["strategy"],
+            "selected_model": None,
+            "entry_base": 0.55,
+            "slots": 10,
+        },
+    }
 
 
 def signals(**probs: float) -> pd.DataFrame:

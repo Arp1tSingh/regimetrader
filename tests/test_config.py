@@ -25,9 +25,13 @@ def test_smoke_config_inherits_base_values() -> None:
     base = load_config(str(BASE_CONFIG))
     smoke = load_config(str(SMOKE_CONFIG))
 
-    # Inherited unchanged from the base.
+    # Inherited unchanged from the base. `exit_prob` is used here rather than
+    # `entry_base`, because the frozen config legitimately overrides `entry_base` on
+    # the base only: it is applied as a last overlay and the smoke config points at its
+    # own (absent) frozen path.
     assert smoke["project"]["seed"] == base["project"]["seed"]
-    assert smoke["strategy"]["entry_base"] == base["strategy"]["entry_base"]
+    assert smoke["strategy"]["exit_prob"] == base["strategy"]["exit_prob"]
+    assert smoke["strategy"]["entry_offsets"] == base["strategy"]["entry_offsets"]
     assert smoke["strategy"]["slots"] == 5  # overridden by the smoke file
     # Overridden by the smoke file.
     assert smoke["data"]["source"] == "synthetic"

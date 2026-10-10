@@ -61,15 +61,96 @@ The earlier **+2.44 points for the tree is withdrawn: it was wrong.** It compare
 
 **The strategy is beaten by every baseline on return** and its Sharpe of 2.57 sits below B2 and B3. The pre-registered expectation — "the strategy will trail buy-and-hold on return" — is confirmed, and by a wide margin: 4.6% against 19.5%. Drawdown is the one place it looks better (0.005 against 0.061), but that is because it held **one** position for six weeks and sat in cash otherwise.
 
-### The selection is an artifact and needs a human decision
+### The selection was an artifact, and the rule was revised
 
-The rule "highest validation Sharpe" selected **rf / 0.55 / 5 slots, a run with a single trade**. Sitting in cash for 200 of 245 days gives near-zero volatility, which inflates Sharpe: its 2.568 comes from 43 mildly positive daily returns on one stock (LT.NS, entered 2023-10-27). The same model at its p80 entry base trades 655 times for a **higher CAGR (0.207) at a lower Sharpe (1.833)**. B4's first permutation simulations, which carry **no information at all**, already produced Sharpe 3.48, 3.04 and 1.80.
+Run 1's rule ("highest validation Sharpe") selected **rf / 0.55 / 5 slots, a run with a single trade**: 43 mildly positive daily returns on one stock (LT.NS, entered 2023-10-27), with the strategy in cash for 200 of the 245 days. It is a small sample, not a strategy. B4's meaningless permutations scored 3.48 / 3.04 / 1.80 against its 2.57.
 
-A minimum-trade guard would fix the ranking, but that changes the selection criterion **after** seeing which configuration wins, so it must be the human's call and must be recorded in `DECISIONS.md` before the grid is re-run. **Not decided unilaterally.**
+This is **not** because cash inflates Sharpe — Sharpe is a ratio and exposure scales its numerator and denominator together. It is sample size. Run 1's output is preserved and still counted; the selection rule was revised (R39-R42) and the grid re-run in full. See the T5.6 run 2 section above.
 
 ### Expected outcome, restated
 
 > **The strategy trails buy-and-hold on return (4.6% against 19.5%) and on Sharpe against two of the three baselines. Drawdown looks better than buy-and-hold, but on one trade.**
+
+## 2026-10-10 — T5.6 run 2, with the activity and null filters (R39-R42)
+
+Run 1's output is preserved unaltered in `reports/results/tune_grid_validation_run1.csv`
+(18 rows) and its trial rows remain counted. A `kind="other"` trial row
+`selection_rule_revision` records that the rule changed after run 1, so the trial log
+itself carries the history.
+
+### What each filter removed
+
+| stage | passed | of |
+|---|---|---|
+| grid (eligible models only, R31) | 18 | 18 |
+| **activity filter** (≥30 round trips, ≥10% mean exposure) | **10** | 18 |
+| **null filter** (Sharpe > own null's 90th percentile) | **1** | 3 shortlisted |
+
+### The three shortlisted configurations, each against its own null and against B1
+
+| configuration | Sharpe | trades | exposure | null median | **null p90** | beats null? | **B1 Sharpe** |
+|---|---|---|---|---|---|---|---|
+| xgb / 0.5500 / 5 | 2.3127 | 161 | 0.865 | 1.5547 | **2.3838** | **no** | — |
+| xgb / 0.5500 / 10 | 2.0928 | 284 | 0.865 | 1.2542 | **2.1792** | **no** | — |
+| **rf / 0.5044 / 10** | **1.8328** | 655 | 0.996 | −0.0123 | **0.6581** | **yes** | **1.9195** |
+
+**Path taken: `selected`** (the first branch). Frozen: `rf`, `entry_base` 0.504415,
+`slots` 10, `meta.method = activity_and_null_filtered`, `demonstrated_edge: true`.
+
+### Trial count
+
+**331 counted trials** (335 rows less 4 `calibration` rows, which the spec excludes):
+5 `regime_k` + 4 `model_year` + 18 `strategy_grid` (run 1 **and** run 2, the same 18
+configurations upserted) + 300 B4 null simulations + 3 baselines + 1
+`selection_rule_revision`.
+
+**Bug found and fixed while logging the nulls.** All 100 simulations of a configuration
+shared one upsert key (`kind`, `run_id`, `model`, `params_json`, `period`), so they
+collapsed into a single row and the count read 34 instead of 331. The simulation index
+is now part of `run_id` and `params`. The three malformed rows were removed; nothing
+else in the log was touched.
+
+## 2026-10-10 — Interpretation, stated against the pre-registration
+
+> **Expect the strategy to trail buy-and-hold on return.**
+
+**Confirmed.** The selected configuration returns **CAGR 0.207** against B1's
+**0.195** on the validation year — but its **Sharpe is 1.833 against B1's 1.920**, so on
+the risk-adjusted measure it still loses to simply holding the index. B2 (equal weight,
+3.467) and B3 (the plain SMA trend rule, 3.899) beat it by a wide margin.
+
+**The validation year rewarded almost any long exposure.** B1, B2 and B3 have Sharpe
+1.92, 3.47 and 3.90. A do-nothing equal-weight or trend portfolio outscores the tuned
+strategy. So the Sharpe *differences between these configurations mostly reflect how
+much long exposure each one carried*, not skill: the xgb shortlist entries scored 2.09
+and 2.31 with 87% exposure, the rf entry scored 1.83 with 100% exposure, and B2 and B3
+scored highest of all with 100% exposure. No configuration here is distinguished by
+ranking skill on that evidence.
+
+**What the null filter does and does not establish.** rf / 0.5044 / 10 cleared its own
+null comfortably (1.833 against a p90 of 0.658, with a null median of −0.012). That is
+real evidence that *something* about this configuration beat chance under identical
+regime rules and turnover. It is **not** evidence that the classifier adds value over
+`^NSEI`: the classifier's own accuracy edge over the majority baseline is +0.0001 for
+the best model (R36), and its cross-sectional quintile spread intervals all contain zero
+(R35). The permutation null breaks the link between prediction and the stock's own
+returns; a configuration can beat it through its regime rules and exposure alone.
+
+**Caveat recorded on the null comparison.** The two xgb nulls have far higher p90s
+(2.18, 2.38) than the rf null (0.66). Their entry bases of 0.55 admit so few candidates
+that most null permutations trade almost nothing, producing a wide, high-variance Sharpe
+distribution. Each configuration is compared against its *own* null, which is the fair
+comparison, but a configuration whose null is itself dominated by tiny samples faces a
+high bar. The rf entry passed partly because its lower entry base produces a null with
+655-trade runs, i.e. a well-estimated and genuinely low null. This asymmetry is a
+property of the grid, not a defect in the filter, and it is stated rather than smoothed
+over.
+
+**On the earlier explanation, corrected.** A previous entry attributed the 1-trade
+winner's high Sharpe to cash suppressing volatility. That was wrong: Sharpe is a ratio
+and exposure scales its numerator and denominator together. The correct explanation is
+sample size — one trade in one lucky window is a small sample, not evidence. The claim
+has been removed rather than left standing.
 
 ## Pre-registered expectation (written before any backtest result existed)
 
@@ -126,11 +207,13 @@ recorded.
 
 ## Open question for the human
 
-**The tuning rule picked a 1-trade configuration.** Should selection require a minimum
-number of trades (for example `n_trades >= 30`) before a run is eligible, so that a
-near-cash run cannot win on Sharpe? Arguments both ways are recorded above. Whatever is
-chosen must go into `DECISIONS.md` **before** the grid is re-run, and the trial count
-re-stated. Not decided unilaterally.
+**None outstanding for T5.6/T5.7.** The selection-rule question was decided: activity
+and null filters were added (R39-R42), disclosed as post-hoc, run 1 preserved and
+counted. Phase 6 has not started.
+
+Worth knowing before Phase 6: the surviving configuration cleared its own null but still
+**lost to plain buy-and-hold on Sharpe**, and the classifier's accuracy edge over the
+majority baseline is zero (R36). See "Interpretation" above.
 
 ## Log
 
@@ -147,6 +230,12 @@ re-stated. Not decided unilaterally.
 | 2026-10-10 | **T5.7** | **Bug fixed: CAGR was NaN for every run** (R38). The equity frame had a `RangeIndex`, so `summarize` could not measure elapsed time — all 18 grid trials and all baselines reported a blank CAGR while every other metric looked healthy and nothing failed. The frame is now indexed by a `DatetimeIndex`. Guarded by `test_cagr_needs_a_datetime_index`. |
 | 2026-10-10 | **T5.7** | **Validation result: the strategy is beaten by every baseline on return** — V2 0.046 CAGR against B1 0.195, B2 0.389, B3 0.320. The pre-registered expectation is confirmed and the margin is wide. B4's first permutations, carrying no information, already produced Sharpe 3.48 / 3.04 / 1.80 against the strategy's 2.57. |
 | 2026-10-10 | tests | **408 fast tests, 430 total** (up from 352/373). Three of my own new tests were wrong and were corrected rather than weakened: `nan != nan`, a "clustering widens the interval" test built on i.i.d. data where it does not, and a "longer block widens the interval" test rebuilt on AR(1) data where it does. |
+| 2026-10-10 | **T5.6 run 2** | **Activity filter (R39): 10 of 18 configurations passed** (≥30 round trips, ≥10% mean exposure). It removed exactly the degenerate 1-trade winners. |
+| 2026-10-10 | **T5.6 run 2** | **Null filter (R40): 1 of 3 shortlisted passed.** xgb/0.55/5 scored 2.313 against its own null p90 of **2.384** and xgb/0.55/10 scored 2.093 against **2.179** — both fail. rf/0.5044/10 scored 1.833 against a null p90 of **0.658** (null median −0.012) — passes. Each null used **100 simulations**, seed from config, under that configuration's own entry base and slots. |
+| 2026-10-10 | **T5.6 run 2** | **Frozen: `rf`, `entry_base` 0.504415, `slots` 10**, `meta.method = activity_and_null_filtered`, `demonstrated_edge: true`. **Total 331 counted trials** including run 1's 18 configurations (preserved, still counted) and all 300 null simulations. |
+| 2026-10-10 | **T5.6 run 2** | **Bug fixed**: all 100 null simulations of a configuration shared one upsert key, so they collapsed to a single row and the trial count read 34 instead of 331. The simulation index is now in `run_id` and `params`. The 3 malformed rows were removed; no other log rows touched. |
+| 2026-10-10 | **T5.6 run 2** | **Runtime measured before committing to it**, as required: 6.22 s/simulation measured over a 200-simulation run, so 3 × 100 ≈ 31 minutes. Reported and accepted; the simulation count was **not** reduced. |
+| 2026-10-10 | **T5.6 run 2** | **My own overstatement corrected.** A previous entry explained the 1-trade winner as "cash suppresses volatility, inflating Sharpe". That is wrong — Sharpe is a ratio and exposure scales numerator and denominator together. The correct cause is sample size. The claim was removed everywhere, including from PROGRESS.md, and R39 now says so explicitly. |
 | 2026-10-10 | T5.4 | `src/backtest/engine.py`: EXECUTE -> MARK -> DECIDE -> STORE ordering, `DayContext`, `run_backtest` with the test-period guard, `fact_trade` and `fact_portfolio_daily` written by run_id (idempotent), `write_signals` reserved for the primary run. 10 tests. **Fill-timing test proves no look-ahead**: with `close_t=100` and `open_(t+1)=200`, the fill is 200. |
 | 2026-10-10 | T5.4 | **Bug fixed**: `running_max` was computed from previous rows only, so every new equity high produced a *negative* drawdown (-0.0017 instead of 0), understating drawdown in all results. |
 | 2026-10-10 | T5.4 | **Bug fixed**: the stop-loss cooldown was registered when the stop *triggered* rather than when the exit *filled*, so `cooldown_days` counted from the wrong date. Now starts at the exit and counts real trading days. |
@@ -206,12 +295,12 @@ re-stated. Not decided unilaterally.
 | VIX used in regimes (yes or no) and coverage | |
 | Chosen k and why | **k = 3**, not the default 4: k=4 gave BEAR 1.1% and BULL 2.5% of training days, both under the 3% "meaningless fragments" line in `DECISIONS` Q1/L5 |
 | Regime day counts (BULL / SIDEWAYS / HIGH_VOL / BEAR) | k=3: BULL 1,167 · SIDEWAYS 754 · BEAR 27 training days |
-| Selected model, `entry_base`, `slots` (from validation) | **rf, `entry_base` 0.55, `slots` 5** — but this run has **1 trade**; see "The selection is an artifact" above, needs a human decision |
+| Selected model, `entry_base`, `slots` (from validation) | **rf, `entry_base` 0.504415, `slots` 10** — cleared both filters (655 trades, 99.6% exposure; Sharpe 1.833 against its own null p90 of 0.658). `meta.method = activity_and_null_filtered`, `demonstrated_edge: true`. Still **below B1's Sharpe 1.920** |
 | Strategy-tuning eligibility (R31) | **logreg, rf, xgb eligible; tree excluded** (76.4% of its rows tied at one `prob_up`, `p95 − p50 = 0.0000`) |
 | Classifier accuracy versus majority baseline (validation year 2023, n=12,044) | baseline **0.5315**. rf 0.5125 (−0.0190) · xgb 0.5059 (−0.0256) · logreg 0.4980 (−0.0335) · tree 0.5316 (**+0.0001**). **All four at or below baseline.** The earlier "+2.44" was a training-period baseline and is withdrawn (`DECISIONS` R36) |
-| Total trials logged | **real warehouse: 30** — 5 regime_k + 4 model_year + 18 strategy_grid (3 eligible models × 3 entry bases × 2 slots) + 3 baselines (`kind="other"`). The 4 `calibration` rows are diagnostics and are excluded by the spec's counting rule. Smoke warehouse adds 12 more, all synthetic and not real results |
-| Validation backtest, strategy vs baselines | V2 (selected) Sharpe 2.568, CAGR **0.046**, 1 trade · B1 `^NSEI` 1.919, 0.195 · B2 equal weight 3.467, **0.389** · B3 trend **3.899**, 0.320. **Beaten on return by every baseline** |
-| Test period evaluated? (date, lock file) | **No.** Never touched. `final_test.py` has not been run and `TEST_RUN_LOCK.json` does not exist |
+| Total trials logged | **331 counted** (335 rows less 4 `calibration`): 5 regime_k + 4 model_year + 18 strategy_grid (run 1 **and** run 2, upserted to the same 18) + **300 B4 null simulations** + 3 baselines + 1 selection-rule revision |
+| Validation backtest, strategy vs baselines | Selected rf/0.5044/10: Sharpe **1.833**, CAGR 0.207 · B1 `^NSEI` Sharpe **1.920**, CAGR 0.195 · B2 equal weight 3.467, 0.389 · B3 trend **3.899**, 0.320. **Beaten on Sharpe by all three baselines** |
+| Test period evaluated? (date, lock file) | **No.** Never touched. `final_test.py` does not exist yet; `TEST_RUN_LOCK.json` does not exist |
 | Headline test results (strategy vs B1) | |
 
 ## Log
