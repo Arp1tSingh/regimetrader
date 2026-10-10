@@ -7,14 +7,74 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 ## Current position
 
 - Phase: 5
-- Next task: T5.6 (tuning grid) — **check with the human first if the grid or the entry-threshold fallback changes**
-- Last gate passed: **P4** (`make check && make smoke`). Phases 3 and 4 complete; T5.1-T5.5 done.
-- Test count: **352 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **373 total** with the slow set.
+- Next task: **stopped and waiting for the human** — T5.6 and T5.7 are done, Phase 6 has not started
+- Last gate passed: **P4** (`make check && make smoke`). Phases 3 and 4 complete; T5.1-T5.7 done.
+- Test count: **408 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **430 total** with the slow set.
 
-## Pre-registered expectation (written before any backtest result exists)
+## 2026-10-10 — T5.6 and T5.7 results on the validation year
 
-**2026-10-10.** Recorded now, before T5.6 tuning and before the one-time final test,
-so the result cannot be reframed afterwards.
+### The distribution table (step 1, no returns read)
+
+| model | p50 | p80 | p95 | p99 | max | distinct `prob_up` | tied at most common value | p95−p50 | days ≥0.55 | days ≥0.60 | days ≥0.52 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| logreg | 0.4918 | 0.5024 | 0.5162 | 0.5315 | 0.6460 | 12,044 | 0.01% | 0.0244 | 0.0041 | 0.0000 | 0.1551 |
+| rf | 0.4985 | 0.5044 | 0.5170 | 0.5307 | 0.5607 | 12,044 | 0.01% | 0.0185 | 0.0041 | 0.0000 | 0.1388 |
+| **tree** | 0.5015 | 0.5015 | 0.5015 | 0.5015 | 0.5439 | **3** | **76.38%** | **0.0000** | 0.0000 | 0.0000 | 0.0082 |
+| xgb | 0.4946 | 0.5202 | 0.5585 | 0.5892 | 0.6523 | 11,945 | 0.02% | 0.0639 | 0.2245 | 0.0327 | **0.6000** |
+
+The decision tree has **3 distinct probability values across 12,044 rows**, 76.4% of them tied at one value. Any threshold at or below that mass selects nearly every stock, and `target_weights` then orders them alphabetically — an arbitrary portfolio that looks like a strategy.
+
+### The rule and who it excludes (steps 2-3, `DECISIONS` R31-R33)
+
+A model is eligible for strategy tuning only if **no single `prob_up` value holds more than 20% of rows AND `p95 − p50 ≥ 0.01`**. Distribution only — no returns, Sharpe or accuracy. Fixed after seeing the tree's distribution and **before any strategy outcome for it**. Both cut points sit in wide empty gaps (no eligible model is within an order of magnitude of either), so the rule is not knife-edge.
+
+- **tree fails both conditions → excluded from tuning**, but it stays in the classifier comparison, `classifier_metrics.csv`, the `model_year` trial rows and the diagnostics.
+- Third entry base per eligible model: **xgb reaches 0.52 on 60.0% of days → absolute 0.52**; **logreg (15.5%) and rf (13.9%) do not → their own validation p80** (0.5024, 0.5044). 0.55 and 0.60 kept for all.
+- **Grid = 3 eligible × 3 entry bases × 2 slots = 18 trials. Total logged trials = 27** (9 development + 18 grid). Upsert verified across repeated runs.
+
+### Tie-break reporting (step 4)
+
+`tie_break_share` was **0.0000 in every one of the 18 grid runs** and in every baseline. No portfolio in this project was decided by alphabetical order — the eligibility rule worked.
+
+### Classifier comparison, corrected (step 6, `DECISIONS` R36)
+
+The earlier **+2.44 points for the tree is withdrawn: it was wrong.** It compared a *validation* accuracy against a *training-period* majority baseline (0.5067). The validation baseline is **0.5315**.
+
+| model | accuracy | majority baseline | edge | ROC-AUC | edge 95% CI (day-clustered) | quintile spread | spread 95% CI |
+|---|---|---|---|---|---|---|---|
+| logreg | 0.4980 | 0.5315 | **−0.0335** | 0.5222 | [−0.0733, +0.0071] | +0.000362 | [−0.000514, +0.001293] |
+| rf | 0.5125 | 0.5315 | **−0.0190** | 0.5268 | [−0.0517, +0.0139] | +0.000215 | [−0.000612, +0.001098] |
+| tree | 0.5316 | 0.5315 | **+0.0001** | 0.5146 | [−0.0290, +0.0277] | +0.000524 | [−0.000581, +0.001191] |
+| xgb | 0.5059 | 0.5315 | **−0.0256** | 0.5222 | [−0.0592, +0.0106] | +0.000123 | [−0.000662, +0.001011] |
+
+**All four models are at or below the majority baseline.** Every interval contains zero. No model's probability is shown to rank stocks cross-sectionally. The tree's ROC-AUC (0.5146) is the **lowest** of the four despite its nominally best accuracy, and it is the model with 3 distinct values.
+
+### Validation backtest, T5.6 grid + T5.7 baselines
+
+| run | Sharpe | CAGR | max drawdown | trades |
+|---|---|---|---|---|
+| **V2 selected (rf, 0.55, 5 slots)** | 2.568 | **0.046** | 0.005 | **1** |
+| V2 (xgb, 0.55, 5 slots) | 2.313 | 0.193 | 0.052 | 161 |
+| B1 buy and hold `^NSEI` | 1.919 [0.046, 3.967] | 0.195 | 0.061 | 1 |
+| B2 equal weight, monthly | 3.467 [1.710, 5.642] | **0.389** | 0.055 | 386 |
+| B3 trend `sma_20 > sma_50` | **3.899** [2.259, 5.567] | 0.320 | 0.031 | 269 |
+
+**The strategy is beaten by every baseline on return** and its Sharpe of 2.57 sits below B2 and B3. The pre-registered expectation — "the strategy will trail buy-and-hold on return" — is confirmed, and by a wide margin: 4.6% against 19.5%. Drawdown is the one place it looks better (0.005 against 0.061), but that is because it held **one** position for six weeks and sat in cash otherwise.
+
+### The selection is an artifact and needs a human decision
+
+The rule "highest validation Sharpe" selected **rf / 0.55 / 5 slots, a run with a single trade**. Sitting in cash for 200 of 245 days gives near-zero volatility, which inflates Sharpe: its 2.568 comes from 43 mildly positive daily returns on one stock (LT.NS, entered 2023-10-27). The same model at its p80 entry base trades 655 times for a **higher CAGR (0.207) at a lower Sharpe (1.833)**. B4's first permutation simulations, which carry **no information at all**, already produced Sharpe 3.48, 3.04 and 1.80.
+
+A minimum-trade guard would fix the ranking, but that changes the selection criterion **after** seeing which configuration wins, so it must be the human's call and must be recorded in `DECISIONS.md` before the grid is re-run. **Not decided unilaterally.**
+
+### Expected outcome, restated
+
+> **The strategy trails buy-and-hold on return (4.6% against 19.5%) and on Sharpe against two of the three baselines. Drawdown looks better than buy-and-hold, but on one trade.**
+
+## Pre-registered expectation (written before any backtest result existed)
+
+**2026-10-10, before T5.6 tuning and before the one-time final test.** Retained
+unchanged. It is superseded on one factual point only, corrected by `DECISIONS` R36.
 
 > **Expect the strategy to trail buy-and-hold on return. Drawdown and Sharpe are the
 > open questions.**
@@ -28,6 +88,14 @@ question, not the expectation.
 
 If the test period instead shows the strategy beating buy-and-hold on return, that
 result will be reported as anomalous and investigated rather than presented as success.
+
+**Correction (2026-10-10, `DECISIONS` R36).** The 0.5072 baseline quoted above was a
+*training-period* baseline; the validation-year baseline is **0.5315**. The tree's true
+edge is **+0.0001**, not +2.44, and all four models are at or below the validation
+baseline. This makes the pre-registered expectation **stronger**, not weaker: it predicted
+the strategy would trail buy-and-hold, and it trails it by 4.6% against 19.5%. The
+prediction was right for a reason that turned out to be even more damning than the one
+recorded.
 
 ## Honest scope of results so far
 
@@ -53,12 +121,32 @@ result will be reported as anomalous and investigated rather than presented as s
 1. **T6.2, the one-time final test.** The lock is created once and nobody runs it casually.
 2. **Any `paper_live` run on real data.**
 3. **T5.6, if the grid size or the entry-threshold fallback changes**, because that
-   changes the reported trial count.
+   changes the reported trial count. *(Now also: a minimum-trade guard on selection, if
+   the human decides to add one — see "The selection is an artifact".)*
+
+## Open question for the human
+
+**The tuning rule picked a 1-trade configuration.** Should selection require a minimum
+number of trades (for example `n_trades >= 30`) before a run is eligible, so that a
+near-cash run cannot win on Sharpe? Arguments both ways are recorded above. Whatever is
+chosen must go into `DECISIONS.md` **before** the grid is re-run, and the trial count
+re-stated. Not decided unilaterally.
 
 ## Log
 
 | Date | Task | Result and notes |
 |---|---|---|
+| 2026-10-10 | **T5.6** | Eligibility rule (R31), per-model threshold method (R33) and tie-break reporting (R34) written and recorded **before** the grid ran. `scripts/tuning_plan.py` prints the plan and the step-5 stop condition; it came out clear (1 ineligible, 3 eligible). |
+| 2026-10-10 | **T5.6** | **Grid run, validation period only: 18 trials, 27 logged total.** Selected rf / 0.55 / 5 slots, Sharpe 2.5679. Upsert verified: repeated runs add no rows. **Every run has `tie_break_share = 0.0000`** — no alphabetical portfolio was produced anywhere. |
+| 2026-10-10 | **T5.6** | **Bug fixed**: `total_logged_trials` was computed by adding the grid size to a count read *after* logging, and then again after a re-run, reporting 45 instead of 27. The count is now simply the post-run row count, which upsert makes idempotent. |
+| 2026-10-10 | **T5.6** | **The selected configuration is an artifact.** rf / 0.55 / 5 made **1 trade** (LT.NS, entered 2023-10-27) and held cash for 200 of 245 days; low volatility inflates Sharpe. The same model at its p80 entry trades 655 times for CAGR 0.207 against 0.046. A minimum-trade guard would fix the ranking but changes the selection rule after seeing the winner — **left for the human**, not decided unilaterally. |
+| 2026-10-10 | **T5.6** | **Bug found and corrected: the +2.44 classifier edge was wrong** (R36). It compared validation accuracy to a *training-period* baseline. Corrected edge for the tree is **+0.0001**; all four models are at or below the validation baseline of 0.5315. `classifier_metrics.csv` was not being written by any code path at all — `train.py` now writes it with the baseline computed on the same rows as the accuracy. |
+| 2026-10-10 | **T5.7** | `src/backtest/baselines.py`: B1, B2, B3 and the B4 symbol-permutation null, plus `block_bootstrap_sharpe` in metrics. B4 writes its permuted probabilities under a **dedicated `dim_model` row** and deletes them in a `finally` block, so the real model's signals cannot be disturbed. |
+| 2026-10-10 | **T5.7** | **Three baselines were placeholders and produced meaningless numbers.** B1 and B3 both bought the alphabetically first symbol; B2 weighted only `slots` names. Rebuilt to `spec 06` §6: B1 buys `^NSEI` and **raises** if it has no bar, B2 is `1/N` over the whole universe, B3 follows `sma_20 > sma_50` (R37). Before: B1 traded 0 times, B3 traded 0 times. |
+| 2026-10-10 | **T5.7** | **Engine gaps this exposed** (R37): `_load_market` filtered prices to `EQUITY`, making `^NSEI` unreachable; `DayContext.signals` held only predicted symbols, so baselines with no model saw an empty universe; `fact_indicator.sma_20`/`sma_50` were never selected, so B3 had no signal. All three fixed; the index carries NaN `prob_up`, which can never qualify for entry, so V0-V2 still cannot select it. |
+| 2026-10-10 | **T5.7** | **Bug fixed: CAGR was NaN for every run** (R38). The equity frame had a `RangeIndex`, so `summarize` could not measure elapsed time — all 18 grid trials and all baselines reported a blank CAGR while every other metric looked healthy and nothing failed. The frame is now indexed by a `DatetimeIndex`. Guarded by `test_cagr_needs_a_datetime_index`. |
+| 2026-10-10 | **T5.7** | **Validation result: the strategy is beaten by every baseline on return** — V2 0.046 CAGR against B1 0.195, B2 0.389, B3 0.320. The pre-registered expectation is confirmed and the margin is wide. B4's first permutations, carrying no information, already produced Sharpe 3.48 / 3.04 / 1.80 against the strategy's 2.57. |
+| 2026-10-10 | tests | **408 fast tests, 430 total** (up from 352/373). Three of my own new tests were wrong and were corrected rather than weakened: `nan != nan`, a "clustering widens the interval" test built on i.i.d. data where it does not, and a "longer block widens the interval" test rebuilt on AR(1) data where it does. |
 | 2026-10-10 | T5.4 | `src/backtest/engine.py`: EXECUTE -> MARK -> DECIDE -> STORE ordering, `DayContext`, `run_backtest` with the test-period guard, `fact_trade` and `fact_portfolio_daily` written by run_id (idempotent), `write_signals` reserved for the primary run. 10 tests. **Fill-timing test proves no look-ahead**: with `close_t=100` and `open_(t+1)=200`, the fill is 200. |
 | 2026-10-10 | T5.4 | **Bug fixed**: `running_max` was computed from previous rows only, so every new equity high produced a *negative* drawdown (-0.0017 instead of 0), understating drawdown in all results. |
 | 2026-10-10 | T5.4 | **Bug fixed**: the stop-loss cooldown was registered when the stop *triggered* rather than when the exit *filled*, so `cooldown_days` counted from the wrong date. Now starts at the exit and counts real trading days. |
@@ -99,7 +187,7 @@ result will be reported as anomalous and investigated rather than presented as s
 **Gate P2:** `make check && make smoke`. **PASSED.**
 **Phase 3 Regimes:** [x] T3.1 [x] T3.2 [x] T3.3 [x] T3.4 [x] T3.5
 **Phase 4 Classifiers:** [x] T4.1 [x] T4.2 [x] T4.3 [x] T4.4 [x] T4.5
-**Phase 5 Strategy and backtest:** [x] T5.1 [x] T5.2 [x] T5.3 [x] T5.4 [x] T5.5 [ ] T5.6 [ ] T5.7 [ ] T5.8
+**Phase 5 Strategy and backtest:** [x] T5.1 [x] T5.2 [x] T5.3 [x] T5.4 [x] T5.5 [x] T5.6 [x] T5.7 [ ] T5.8
 
 **Gate P4:** `make check && make smoke`. **PASSED** — 352 fast tests, 373 total.
 **Phase 6 Final evaluation:** [ ] T6.1 [ ] T6.2 [ ] T6.3 [ ] T6.4
@@ -116,12 +204,14 @@ result will be reported as anomalous and investigated rather than presented as s
 | Instruments loaded / stocks with under 10 years of history | **52 instruments** (50 EQUITY + `^NSEI` + `^INDIAVIX`); **6 stocks under 10 years**: JIOFIN, ETERNAL, MAXHEALTH, HDFCLIFE, SBILIFE, BSE |
 | Trading days loaded, first and last date | 2015-01-02 to 2026-10-09; **2,898 index bars**, 143,481 price rows, 419 rejected (0.29%) |
 | VIX used in regimes (yes or no) and coverage | |
-| Chosen k and why | |
-| Regime day counts (BULL / SIDEWAYS / HIGH_VOL / BEAR) | |
-| Selected model, `entry_base`, `slots` (from validation) | not yet tuned (T5.6). Defaults in use: `entry_base` 0.55, `slots` 10, model untuned |
-| Classifier accuracy versus majority baseline (per model, validation year 2023) | **tree 0.5316** · rf 0.5125 · xgb 0.5059 · logreg 0.4980; majority baseline **0.5072** |
-| Total trials logged | **real warehouse: 9** (5 regime_k + 4 model_year). Smoke warehouse: 12 (adds 3 synthetic V0/V1/V2 wiring checks, not real results). Trial count will change if T5.6's grid or fallback changes |
-| Test period evaluated? (date, lock file) | |
+| Chosen k and why | **k = 3**, not the default 4: k=4 gave BEAR 1.1% and BULL 2.5% of training days, both under the 3% "meaningless fragments" line in `DECISIONS` Q1/L5 |
+| Regime day counts (BULL / SIDEWAYS / HIGH_VOL / BEAR) | k=3: BULL 1,167 · SIDEWAYS 754 · BEAR 27 training days |
+| Selected model, `entry_base`, `slots` (from validation) | **rf, `entry_base` 0.55, `slots` 5** — but this run has **1 trade**; see "The selection is an artifact" above, needs a human decision |
+| Strategy-tuning eligibility (R31) | **logreg, rf, xgb eligible; tree excluded** (76.4% of its rows tied at one `prob_up`, `p95 − p50 = 0.0000`) |
+| Classifier accuracy versus majority baseline (validation year 2023, n=12,044) | baseline **0.5315**. rf 0.5125 (−0.0190) · xgb 0.5059 (−0.0256) · logreg 0.4980 (−0.0335) · tree 0.5316 (**+0.0001**). **All four at or below baseline.** The earlier "+2.44" was a training-period baseline and is withdrawn (`DECISIONS` R36) |
+| Total trials logged | **real warehouse: 27** — 5 regime_k + 4 model_year + 18 strategy_grid (3 eligible models × 3 entry bases × 2 slots). Smoke warehouse: 12 more, all synthetic and not real results |
+| Validation backtest, strategy vs baselines | V2 (selected) Sharpe 2.568, CAGR **0.046**, 1 trade · B1 `^NSEI` 1.919, 0.195 · B2 equal weight 3.467, **0.389** · B3 trend **3.899**, 0.320. **Beaten on return by every baseline** |
+| Test period evaluated? (date, lock file) | **No.** Never touched. `final_test.py` has not been run and `TEST_RUN_LOCK.json` does not exist |
 | Headline test results (strategy vs B1) | |
 
 ## Log

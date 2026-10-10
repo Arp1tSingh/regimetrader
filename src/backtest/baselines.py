@@ -38,30 +38,33 @@ BASELINE_SETTINGS: dict[str, dict[str, Any]] = {
 }
 
 
-def permuted_signals(panel: pd.DataFrame, seed: int) -> pd.DataFrame:
+def permuted_signals(signals: pd.DataFrame, seed: int) -> pd.DataFrame:
     """Relabel each stock's `prob_up` series with another stock's.
 
     One fixed permutation per simulation, seeded, so the null is reproducible. The
     permutation is applied within each day across symbols, so every day keeps the same
-    distribution of probabilities and only the stock each one belongs to changes.
+    multiset of probabilities and only the stock each one belongs to changes.
 
     Args:
-        panel: Panel rows carrying `symbol`, `date_key` and `prob_up`.
+        signals: Rows carrying `date_key`, `symbol` and `prob_up`.
         seed: Seed for the permutation.
 
     Returns:
-        A copy of `panel` with `prob_up` permuted across symbols within each day.
+        A copy with `prob_up` permuted across symbols within each day, in the same row
+        order as the input.
     """
     import numpy as np
 
     rng = np.random.default_rng(seed)
-    out = panel.copy()
-    out["prob_up"] = out["prob_up"].astype(float)
+    out = signals.copy()
+    # A copy is required: `to_numpy` returns a read-only view under pandas 3.
+    values = out["prob_up"].to_numpy(dtype=float).copy()
 
     for _day, index in out.groupby("date_key", sort=True).groups.items():
         positions = out.index.get_indexer(index)
-        shuffled = rng.permutation(positions)
-        out.loc[index, "prob_up"] = out["prob_up"].to_numpy()[shuffled]
+        values[positions] = values[rng.permutation(positions)]
+
+    out["prob_up"] = values
     return out
 
 
@@ -100,20 +103,34 @@ def b4_distribution(
     from src.backtest.engine import run_backtest
     from src.backtest.metrics import summarize
     from src.backtest.strategies import make_weights_fn
-    from src.common.db import execute_many
-    from src.features.panel import TARGET_COL, build_panel
+    from src.common.db import execute_many, read_sql
 
     count = int(sims if sims is not None else cfg["backtest"]["random_baseline_sims"])
     seed = int(cfg["project"]["seed"])
     perm_model = f"{model}_b4perm"
 
-    frame = build_panel(engine, cfg).dropna(subset=[TARGET_COL])
+    start_key = int(str(start).replace("-", ""))
+    end_key = int(str(end).replace("-", ""))
+
+    # Probabilities live in `fact_signal`, not in the feature panel.
+    frame = read_sql(
+        engine,
+        "SELECT f.date_key AS date_key, s.symbol AS symbol, f.prob_up AS prob_up "
+        "FROM fact_signal f "
+        "JOIN dim_model m ON m.model_key = f.model_key "
+        "JOIN dim_stock s ON s.stock_key = f.stock_key "
+        "WHERE m.model_name = :model AND f.date_key BETWEEN :a AND :b "
+        "ORDER BY f.date_key, s.symbol",
+        {"model": model, "a": start_key, "b": end_key},
+    )
+    if frame.empty:
+        raise ValueError(f"no stored probabilities for model {model}; run `make train` first")
 
     with engine.begin() as conn:
         conn.execute(
             text(
                 "INSERT OR IGNORE INTO dim_model (model_name, version, trained_through, "
-                "params) VALUES (:name, 'b4perm', 'permutation-null', '{}')"
+                "params_json) VALUES (:name, 'b4perm', 'permutation-null', '{}')"
             ),
             {"name": perm_model},
         )
@@ -132,9 +149,6 @@ def b4_distribution(
             conn.execute(text("SELECT date_key, regime_key FROM fact_market_regime")).fetchall()
         )
 
-    start_key = int(str(start).replace("-", ""))
-    end_key = int(str(end).replace("-", ""))
-
     rows = []
     try:
         for sim in range(count):
@@ -147,7 +161,7 @@ def b4_distribution(
                     "p": float(row.prob_up) if pd.notna(row.prob_up) else None,
                 }
                 for row in shuffled.itertuples(index=False)
-                if str(row.symbol) in stocks and start_key <= int(row.date_key) <= end_key
+                if str(row.symbol) in stocks
             ]
 
             with engine.begin() as conn:
