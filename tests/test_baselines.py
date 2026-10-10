@@ -180,6 +180,199 @@ def test_b4_permutation_is_seed_sensitive() -> None:
     assert not np.allclose(a, b)
 
 
+def test_b4_only_touches_the_probability_column() -> None:
+    """Prices, returns, regimes and execution must be identical before and after.
+
+    The null's whole claim is that it changes the prediction-to-stock mapping and
+    nothing else. If any other column moved, the null would not be a null.
+    """
+    df = panel()
+    df["next_day_return"] = np.linspace(-0.1, 0.1, len(df))
+    df["regime_key"] = 3
+    shuffled = permuted_signals(df, seed=11)
+
+    assert list(shuffled.columns) == list(df.columns)
+    for column in ("date_key", "symbol", "next_day_return", "regime_key"):
+        pd.testing.assert_series_equal(shuffled[column], df[column], check_names=False)
+    assert not np.allclose(shuffled["prob_up"].to_numpy(), df["prob_up"].to_numpy())
+
+
+def test_b4_permutation_depends_only_on_row_order_not_on_values() -> None:
+    """No look-ahead: the draw must not depend on the probabilities themselves.
+
+    If the permutation were drawn from the values, scaling a frame's probabilities
+    could change which rows get swapped. Scaling by an exact factor commutes with a
+    fixed index permutation, so `permuted(scaled)` must equal `scale * permuted`.
+    That equality can only hold if the same indices were permuted both times.
+    """
+    df = panel()
+    scaled = df.copy()
+    scaled["prob_up"] = df["prob_up"] * 10.0
+
+    a = permuted_signals(df, seed=5)["prob_up"].to_numpy()
+    b = permuted_signals(scaled, seed=5)["prob_up"].to_numpy()
+
+    assert np.allclose(b, a * 10.0), (
+        "the same index permutation must be applied regardless of the values, "
+        "so the draw cannot depend on the probabilities"
+    )
+
+
+def test_b4_permutation_pattern_is_independent_of_value_scale() -> None:
+    """Recover the permutation explicitly: encoding row identity in the values."""
+    df = panel()
+    identity = df.copy()
+    identity["prob_up"] = np.arange(len(df), dtype=float)
+
+    out = permuted_signals(identity, seed=5)["prob_up"].to_numpy()
+    # Every row received some other row's value, so the mapping is a real permutation.
+    assert sorted(out.tolist()) == sorted(identity["prob_up"].tolist())
+    # And it differs from the identity mapping.
+    assert not np.array_equal(out, identity["prob_up"].to_numpy())
+
+
+@pytest.mark.slow
+def test_null_sharpe_centres_on_equal_weight_when_every_stock_is_eligible(
+    signals_ready: tuple,
+) -> None:
+    """With no threshold, the null must behave like an equal-weight portfolio.
+
+    If every stock is always eligible and slots covers the universe, V2 ranks stocks by
+    a *permuted* probability — an ordering with no predictive content. The resulting
+    portfolios should therefore be indistinguishable from equal weight, so the null's
+    median Sharpe must sit near B2's.
+
+    This is the null's most important sanity check: if the null distribution were
+    centred somewhere else entirely, a "beats the null" result would mean nothing.
+
+    Tolerance: **0.60 Sharpe**. Twelve simulations of a short synthetic series give a
+    median with a standard error near 0.2, so 0.60 is roughly three standard errors
+    while still failing loudly if the null is centred on something else entirely.
+    """
+    from sqlalchemy import text
+
+    from src.backtest.baselines import permuted_signals
+    from src.backtest.engine import run_backtest
+    from src.backtest.metrics import summarize
+    from src.backtest.strategies import make_weights_fn as build
+    from src.common.db import execute_many, read_sql
+
+    cfg_obj, engine = signals_ready
+    start, end = "2018-01-01", "2022-12-30"
+
+    n_stocks = int(
+        read_sql(
+            engine,
+            "SELECT COUNT(*) AS n FROM dim_stock WHERE instrument_type = 'EQUITY'",
+        )["n"].iloc[0]
+    )
+    assert n_stocks > 1
+
+    # entry_base 0.0: every stock always qualifies. slots covers the universe, so the
+    # permuted ranking cannot drop anyone and the book is equal weight by construction.
+    variant = {
+        **cfg_obj,
+        "strategy": {
+            **cfg_obj["strategy"],
+            "selected_model": "tree",
+            "entry_base": 0.0,
+            "slots": n_stocks,
+        },
+    }
+
+    equal_weight = run_backtest(
+        variant,
+        build("B2", variant),
+        start,
+        end,
+        "null_check_b2",
+        engine=engine,
+        model_name=None,
+        persist=False,
+        band=0.0,
+        stop_loss_enabled=False,
+    )
+    b2_sharpe = summarize(equal_weight.equity, equal_weight.trades, variant)["sharpe"]
+
+    stocks = dict(
+        read_sql(
+            engine, "SELECT symbol, stock_key FROM dim_stock WHERE instrument_type = 'EQUITY'"
+        ).itertuples(index=False, name=None)
+    )
+    base = read_sql(
+        engine,
+        "SELECT f.date_key AS date_key, s.symbol AS symbol, f.prob_up AS prob_up "
+        "FROM fact_signal f JOIN dim_stock s ON s.stock_key = f.stock_key "
+        "ORDER BY f.date_key, s.symbol",
+    )
+
+    regimes = dict(
+        read_sql(engine, "SELECT date_key, regime_key FROM fact_market_regime").itertuples(
+            index=False, name=None
+        )
+    )
+
+    sims = 12
+    sharpes = []
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT OR IGNORE INTO dim_model (model_name, version, trained_through, "
+                "params_json) VALUES ('null_check', 'b4', 'diagnostic', '{}')"
+            )
+        )
+        key = int(
+            conn.execute(
+                text("SELECT model_key FROM dim_model WHERE model_name = 'null_check'")
+            ).fetchone()[0]
+        )
+    try:
+        for sim in range(sims):
+            shuffled = permuted_signals(base, seed=1000 + sim)
+            payload = [
+                {
+                    "d": int(r.date_key),
+                    "s": stocks[str(r.symbol)],
+                    "r": int(regimes.get(int(r.date_key), 0) or 0),
+                    "p": float(r.prob_up),
+                }
+                for r in shuffled.itertuples(index=False)
+                if str(r.symbol) in stocks
+            ]
+            with engine.begin() as conn:
+                conn.execute(text("DELETE FROM fact_signal WHERE model_key = :k"), {"k": key})
+                execute_many(
+                    conn,
+                    "INSERT OR REPLACE INTO fact_signal (date_key, stock_key, model_key, "
+                    "regime_key, prob_up, signal, target_weight) "
+                    "VALUES (:d, :s, :k, :r, :p, 0, 0.0)",
+                    [{**row, "k": key} for row in payload],
+                )
+            outcome = run_backtest(
+                variant,
+                build("V2", variant),
+                start,
+                end,
+                f"null_check_{sim}",
+                engine=engine,
+                model_name="null_check",
+                persist=False,
+            )
+            sharpes.append(summarize(outcome.equity, outcome.trades, variant)["sharpe"])
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM fact_signal WHERE model_key = :k"), {"k": key})
+            conn.execute(text("DELETE FROM dim_model WHERE model_key = :k"), {"k": key})
+
+    median = float(np.nanmedian(sharpes))
+    assert np.isfinite(b2_sharpe), "the equal-weight baseline must produce a Sharpe"
+    assert np.isfinite(median), "every null simulation must produce a finite Sharpe"
+    assert abs(median - b2_sharpe) <= 0.60, (
+        f"null median Sharpe {median:.4f} is not within 0.60 of the equal-weight "
+        f"result {b2_sharpe:.4f}; the null is not behaving like an uninformed portfolio"
+    )
+
+
 def test_b4_actually_decouples_prediction_from_stock() -> None:
     """The permuted prob_up must not equal the stock's own for most rows."""
     df = panel()
