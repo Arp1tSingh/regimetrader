@@ -291,15 +291,6 @@ def smoke_cfg(cfg_smoke: dict[str, Any], repo_root: Path) -> dict[str, Any]:
     return cfg_smoke
 
 
-@pytest.fixture
-def engine(cfg_smoke: dict[str, Any]) -> Engine:
-    from src.common.db import get_engine, init_db
-
-    eng = get_engine(cfg_smoke)
-    init_db(eng)
-    return eng
-
-
 @pytest.mark.slow
 def test_regime_fit_end_to_end(loaded: tuple, cli_config: str) -> None:
     from src.common.config import load_config
