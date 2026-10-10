@@ -29,12 +29,6 @@ def main() -> int:
     start = int(str(cfg["splits"]["validation_start"]).replace("-", ""))
     end = int(str(cfg["splits"]["validation_end"]).replace("-", ""))
 
-    prices = read_sql(
-        engine,
-        "SELECT f.date_key AS date_key, s.symbol AS symbol, f.close_price AS close "
-        "FROM fact_price f JOIN dim_stock s ON s.stock_key = f.stock_key "
-        "WHERE s.instrument_type = 'EQUITY'",
-    )
     signals = read_sql(
         engine,
         "SELECT m.model_name AS model, f.date_key AS date_key, s.symbol AS symbol, "
@@ -63,7 +57,7 @@ def main() -> int:
         p50, p80, p95, p99 = (np.percentile(values, q) for q in (50, 80, 95, 99))
 
         per_day = {}
-        for (d, s, p) in group[["date_key", "symbol", "prob_up"]].itertuples(index=False):
+        for d, _s, p in group[["date_key", "symbol", "prob_up"]].itertuples(index=False):
             per_day.setdefault(d, []).append(p)
 
         day_shares = []

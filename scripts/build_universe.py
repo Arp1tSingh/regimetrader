@@ -41,7 +41,9 @@ def sector_for(industry: str, symbol: str) -> str:
     if industry == "Financial Services":
         return "Banking" if symbol in BANKS else "Financial Services"
     if industry not in SECTOR_BY_INDUSTRY:
-        raise SystemExit(f"unmapped industry {industry!r} for {symbol}; add it to SECTOR_BY_INDUSTRY")
+        raise SystemExit(
+            f"unmapped industry {industry!r} for {symbol}; add it to SECTOR_BY_INDUSTRY"
+        )
     return SECTOR_BY_INDUSTRY[industry]
 
 
@@ -68,7 +70,12 @@ def main(argv: list[str] | None = None) -> int:
         for row in sorted(rows, key=lambda r: r["Symbol"]):
             symbol = row["Symbol"].strip()
             writer.writerow(
-                [f"{symbol}.NS", row["Company Name"].strip(), sector_for(row["Industry"], symbol), row["Industry"]]
+                [
+                    f"{symbol}.NS",
+                    row["Company Name"].strip(),
+                    sector_for(row["Industry"], symbol),
+                    row["Industry"],
+                ]
             )
     print(f"wrote {len(rows)} rows to {dst}")
     return 0

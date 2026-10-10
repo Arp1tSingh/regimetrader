@@ -66,14 +66,14 @@ def main() -> int:
         subset = df[df["model_name"] == model]
         if subset.empty:
             return float("nan"), 0
-        per_day = (
-            subset.assign(ok=subset["prob_up"] >= entry).groupby("date_key")["ok"].sum()
-        )
+        per_day = subset.assign(ok=subset["prob_up"] >= entry).groupby("date_key")["ok"].sum()
         return float((per_day >= need).mean()), int(len(per_day))
 
     print()
-    print("candidate_day_share at the fallback threshold "
-          f"{cfg['strategy']['fallback_entry_base']} (same definition, fallback entry):")
+    print(
+        "candidate_day_share at the fallback threshold "
+        f"{cfg['strategy']['fallback_entry_base']} (same definition, fallback entry):"
+    )
     fallback_entry = float(cfg["strategy"]["fallback_entry_base"])
     still_zero = []
     for model in models_list:
@@ -100,7 +100,11 @@ def main() -> int:
         per_model = (len(entries) + 1) * len(slots)
         total = len(models) * per_model
         print(f"fallback for       : {', '.join(fallback)}")
-        print(f"per model w/ fb    : {len(entries) + 1} entry bases x {len(slots)} slots = {per_model}")
+        per_model_entries = len(entries) + 1
+        print(
+            f"per model w/ fb    : {per_model_entries} entry bases x "
+            f"{len(slots)} slots = {per_model}"
+        )
         print(f"TOTAL TRIALS       : {total}")
         print("-> the trial count changes; the human must approve before tuning")
     else:

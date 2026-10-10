@@ -1,6 +1,6 @@
 {
-  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\models\\train.py --config config/config.yaml",
-  "config_hash": "5b0ac44547f4",
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\models\\train.py --year 2023 --config config/config.yaml",
+  "config_hash": "daa13288c4ff",
   "data_range": {
     "first_date_key": 20150102,
     "last_date_key": 20261009
@@ -14,13 +14,10 @@
     ],
     "rows": 184976,
     "years": [
-      2023,
-      2024,
-      2025,
-      2026
+      2023
     ]
   },
-  "git_commit": "1890f95b76fb27a8cf5b8c06f81f39b5a993440d",
+  "git_commit": "c222d5c2bf6100dff0488788ca13e59e543a26e9",
   "models_used": [],
   "package_versions": {
     "numpy": "2.5.3",
@@ -31,5 +28,5 @@
   },
   "run_id": "train",
   "seed": 42,
-  "timestamp": "2026-10-10T09:15:48+00:00"
+  "timestamp": "2026-10-10T10:47:43+00:00"
 }

@@ -274,10 +274,10 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
     calibration = calibration_rows(engine, cfg, models)
     for row in calibration:
         log.info(
-            "calibration %s: candidate_day_share at %.2f = %.4f",
+            "%s: candidate_day_share at %.2f = %.4f",
             row["model"],
-            float(cfg["strategy"]["fallback_entry_base"]),
-            float(row["candidate_day_share"]),
+            float(min(cfg["tuning"]["entry_base_grid"])),
+            float(row["share"]),
         )
 
     start = str(cfg["splits"]["validation_start"])
@@ -428,14 +428,14 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
                     "slots": int(best["slots"]),
                 },
                 "meta": {
-                    "tuned_at": pd.Timestamp.utcnow(tz="UTC").isoformat(),
+                    "tuned_at": pd.Timestamp.now(tz="UTC").isoformat(),
                     "validation_sharpe": float(best["sharpe"]),
                     "trials": int(len(grid)),
                     "method": overall_method,
                     "method_per_model": per_model_method,
                     "excluded_from_tuning": excluded_models,
                     "grid_trials": int(len(grid)),
-                    "total_logged_trials": count_trials(cfg) + len(grid),
+                    "total_logged_trials": count_trials(cfg),
                 },
             },
             sort_keys=False,
@@ -469,7 +469,7 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
         "trials": int(len(grid)),
         "non_trading_runs": int((~grid["traded"]).sum()),
         "tie_flagged_runs": int(grid["tie_break_flagged"].sum()),
-        "total_logged_trials": count_trials(cfg) + int(len(grid)),
+        "total_logged_trials": count_trials(cfg),
         "selected_model": str(best["model"]),
         "entry_base": float(best["entry_base"]),
         "slots": int(best["slots"]),

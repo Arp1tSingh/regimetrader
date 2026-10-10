@@ -35,10 +35,22 @@ def test_smoke_config_inherits_base_values() -> None:
     assert smoke["splits"]["train_end"] == "2021-12-31"
 
 
-def test_smoke_config_does_not_leak_into_base(tmp_path: Path) -> None:
-    """Loading an override must not mutate the cached or on-disk base."""
+def test_smoke_config_does_not_leak_into_base() -> None:
+    """Loading an override must not mutate the on-disk base.
+
+    Compares the raw file rather than a loaded value: `paths.frozen_config` is applied
+    as a last overlay on the base, so the *loaded* base legitimately differs from the
+    file once tuning has run. The invariant under test is that nothing was written back.
+    """
+    import yaml
+
+    before = BASE_CONFIG.read_text(encoding="utf-8")
     load_config(str(SMOKE_CONFIG))
-    assert load_config(str(BASE_CONFIG))["strategy"]["slots"] == 10
+    after = BASE_CONFIG.read_text(encoding="utf-8")
+
+    assert before == after, "loading the smoke config must not rewrite the base config"
+    # The base file itself is unchanged: its own strategy section is intact.
+    assert yaml.safe_load(after)["strategy"]["slots"] == 10
 
 
 def test_relative_path_resolves_against_repo_root() -> None:

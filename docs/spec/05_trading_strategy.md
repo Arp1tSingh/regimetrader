@@ -116,13 +116,23 @@ Regime smoothing (`04` section 5.3) limits flip-flopping.
 
 ## 6. Calibration and tuning protocol
 
-Classifier probabilities for daily direction cluster near 0.5, so thresholds can be too high to ever trigger.
+Classifier probabilities for daily direction cluster near 0.5, so thresholds can be too high to ever trigger. They can also be **degenerate** — a large mass of identical values — which no absolute threshold can serve.
 
-1. **Calibration check** (per model, on validation-year probabilities): `candidate_day_share` = share of validation trading days on which at least `ceil(min(tuning.slots_grid) / 2)` stocks have `prob_up >= min(tuning.entry_base_grid)`. Log it as a `calibration` row (not counted as a trial).
-2. If `candidate_day_share < strategy.calibration_min_candidate_day_share` (0.50), append `strategy.fallback_entry_base` (0.52, "rank-based selection": take the top-ranked stocks above 0.52) to that model's `entry_base` grid and log that the fallback was used.
-3. **Grid** (validation period only): for each model in `tuning.models`, each `entry_base` in the (possibly extended) grid, each `slots` in `tuning.slots_grid`: run the full strategy V2 on the validation period (not persisted), log one trial (`metric = sharpe`; CAGR, max drawdown and turnover in `extra`) and write all trials to `reports/results/tune_grid_validation.csv`.
-4. **Selection:** highest validation Sharpe; tie-break lower turnover. Write `selected_model`, `entry_base`, `slots` under `strategy:` in `paths.frozen_config` (format in `07` section 3), with `meta.method` = `threshold` or `rank_fallback`.
-5. Report the number of configurations tried (trial log) and which method was used.
+1. **Distribution table** (per model, on validation-year probabilities, no returns read): `p50`, `p80`, `p95`, `p99`, `max`, the number of distinct `prob_up` values, the share of rows tied at the single most common value, `p95 - p50`, and the `candidate_day_share` at 0.52. Reported, not counted as trials.
+
+2. **Eligibility rule** (`DECISIONS` R31). A model is eligible for strategy tuning only if **both** hold on that distribution: no single `prob_up` value holds more than **20%** of rows, **and** `p95 - p50 >= 0.01`. The rule reads only the distribution of predictions — never returns, Sharpe or accuracy. It was fixed after seeing the decision tree's distribution and before any strategy outcome for it.
+
+   An ineligible model is excluded from the grid **only**. It is still trained, written to `fact_signal`, scored, and reported in the classifier comparison, `classifier_metrics.csv`, the trial log's `model_year` rows and the validation diagnostics (R32).
+
+3. **Per-model third entry base** (`DECISIONS` R33). Every eligible model keeps `0.55` and `0.60`. The third entry base is `strategy.fallback_entry_base` (0.52) when the model reaches it on at least 50% of validation days (`method: absolute`); otherwise it is that model's own validation **p80** of `prob_up` (`method: percentile_p80`). Measured: xgb 60.0% → absolute; logreg 15.5% and rf 13.9% → p80.
+
+4. **Grid** (validation period only): for each **eligible** model, each of its 3 entry bases, each `slots` in `tuning.slots_grid`: run the full strategy V2 on the validation period (not persisted), log one trial (`metric = sharpe`; CAGR, max drawdown and turnover in `extra`) and write all trials to `reports/results/tune_grid_validation.csv`. Grid size = **eligible models x 3 entry bases x 2 slots** = 3 x 3 x 2 = **18**, plus the 9 prior development trials = **27 total**.
+
+5. **Tie-break reporting** (`DECISIONS` R34). Every tuning and baseline run reports `tie_break_share` — the share of new entries sitting on the cutoff probability, which were therefore chosen by symbol order rather than by a higher probability. A run above **5%** is flagged `tie_break_flagged` in `tune_grid_validation.csv` and excluded from selection with a note in the trial log. Flagged and non-trading runs both stay in the CSV and the log.
+
+6. **Selection:** highest validation Sharpe among `traded` runs; tie-break lower turnover. Write `selected_model`, `entry_base`, `slots` under `strategy:` in `paths.frozen_config`, with `meta.method` **per model** (`method_per_model`), plus `excluded_from_tuning` and the trial counts.
+
+7. Report the number of configurations tried (trial log) and which method each model used.
 
 Discipline: tune only on the validation year; keep the grid small; never touch the test period; after the final test do not change the strategy and re-run (`06` section 8).
 

@@ -141,7 +141,9 @@ All with default rules: BULL entry 0.55 / exposure 1.0, SIDEWAYS 0.60 / 0.6, HIG
 | `test_primary_run_writes_signals` | Only a run with `write_signals=True` changes `fact_signal.signal` and `target_weight` |
 | `test_bootstrap_reproducible` | Same seed, same interval; the point estimate lies inside the interval on a long synthetic return series |
 | `test_test_lock` | First `final_test` run writes `TEST_RUN_LOCK.json` (including `data_end_date`); a second invocation exits 3; `--allow-rerun "reason"` runs and appends to `test_run_log.jsonl` with count 2 |
-| `test_tune_grid_size` | Number of grid trials equals models x entry bases (plus fallback when triggered) x slots; each is in the trial log; re-running `tune` adds no rows; `calibration` rows are excluded from the count |
+| `test_tune_grid_size` | Number of grid trials equals **eligible** models x 3 entry bases x slots = 3 x 3 x 2 = 18 (`test_grid_size_is_18_when_the_tree_is_excluded`); the arithmetic trap of adding one trial per model instead of one entry base per model is covered by `test_grid_size_would_be_24_if_every_model_were_eligible`; each trial is in the trial log; re-running `tune` adds no rows; `calibration` rows are excluded from the count |
+| `test_eligibility_rule` | The R31 rule rejects the decision tree's measured distribution (76.4% tied, `p95-p50` 0.0000) and accepts logreg, rf and xgb; the thresholds are the documented constants 0.20 and 0.01; the rule reads only distribution fields, so outcome fields in its input cannot change the verdict; no eligible model sits within an order of magnitude of either boundary |
+| `test_tie_break_reporting` | A new entry on the cutoff probability counts as tie-broken while entries above it do not; a fully tied candidate field makes every entry tie-broken, which is the hazard R31 catches; a run with no new entries reports NaN share, not zero; a run above the 5% cap is flagged and excluded from selection |
 
 ---
 
