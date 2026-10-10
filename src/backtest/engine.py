@@ -95,6 +95,22 @@ class BacktestResult:
     run_id: str
     model_name: str | None = None
     summary: dict[str, Any] = field(default_factory=dict)
+    #: New positions opened during the run.
+    new_entries: int = 0
+    #: New entries whose selection came from the symbol tie-break rather than from a
+    #: probability difference (DECISIONS R34).
+    tie_broken_entries: int = 0
+
+    @property
+    def tie_break_share(self) -> float:
+        """Share of new entries decided by the symbol tie-break.
+
+        NaN when the run opened no positions: there is no share to report, and a
+        zero would read as "no entries were tie-broken" rather than "none existed".
+        """
+        if self.new_entries <= 0:
+            return float("nan")
+        return self.tie_broken_entries / self.new_entries
 
 
 def _load_market(engine: Any, cfg: Mapping[str, Any]) -> dict[str, Any]:
@@ -244,6 +260,8 @@ def run_backtest(
     cooldown_until: dict[str, int] = {}
     stop_pending: set[str] = set()
     last_close: dict[str, float] = {}
+    tie_new_entries = 0
+    tie_broken_entries = 0
 
     for date_key in dates:
         opens_today = market["opens"].get(date_key, {})
@@ -389,6 +407,13 @@ def run_backtest(
 
         targets = weights_fn(context)
 
+        # DECISIONS R34: accumulate how many new entries were decided by the symbol
+        # tie-break rather than by probability.
+        diagnostics = getattr(weights_fn, "diagnostics", None)
+        if diagnostics is not None:
+            tie_new_entries += int(diagnostics.get("new_entries", 0))
+            tie_broken_entries += int(diagnostics.get("tie_broken_entries", 0))
+
         # 4. STORE: today's targets become tomorrow's pending orders.
         if targets is not None and len(targets):
             pending = targets
@@ -428,12 +453,21 @@ def run_backtest(
         len(trades_df),
         float(equity_df["equity"].iloc[-1]) if len(equity_df) else float("nan"),
     )
+    tie_break_share = tie_broken_entries / tie_new_entries if tie_new_entries else float("nan")
+    log.info(
+        "tie-break share: %.4f (%d of %d new entries decided by symbol order)",
+        tie_break_share,
+        tie_broken_entries,
+        tie_new_entries,
+    )
     return BacktestResult(
         equity=equity_df,
         trades=trades_df,
         signals=signals_df,
         run_id=run_id,
         model_name=model_name,
+        new_entries=tie_new_entries,
+        tie_broken_entries=tie_broken_entries,
     )
 
 

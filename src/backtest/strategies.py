@@ -89,13 +89,19 @@ def make_v1(cfg: Mapping[str, Any], **kw: Any) -> WeightProvider:
 
 
 def make_v2(cfg: Mapping[str, Any], **kw: Any) -> WeightProvider:
-    """The full strategy: classifier plus regime rules, with stop-loss and band."""
+    """The full strategy: classifier plus regime rules, with stop-loss and band.
+
+    The provider carries a `diagnostics` attribute updated on every call so the engine
+    can report the share of entries decided by the symbol tie-break (`DECISIONS` R34).
+    """
     strategy = cfg["strategy"]
     rules = _regime_rules(cfg)
     slots = int(strategy["slots"])
     exit_prob = float(strategy["exit_prob"])
+    diagnostics = {"new_entries": 0, "tie_broken_entries": 0}
 
     def provider(context: DayContext) -> pd.Series | None:
+        diagnostics.update({"new_entries": 0, "tie_broken_entries": 0})
         if context.signals.empty:
             return None
         return target_weights(
@@ -107,8 +113,10 @@ def make_v2(cfg: Mapping[str, Any], **kw: Any) -> WeightProvider:
             exit_prob=exit_prob,
             force_exit=context.force_exit,
             no_entry=context.no_entry,
+            diagnostics=diagnostics,
         )
 
+    provider.diagnostics = diagnostics  # type: ignore[attr-defined]
     del kw
     return provider
 

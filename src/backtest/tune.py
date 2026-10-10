@@ -42,6 +42,39 @@ class TuningError(RuntimeError):
     """Raised when the grid produced no usable configuration to select."""
 
 
+#: R31: a model is eligible for strategy tuning only if both hold on the
+#: validation-year `prob_up` distribution. No returns are consulted.
+MAX_TIED_SHARE = 0.20
+MIN_P95_P50_SPREAD = 0.01
+
+#: R33: a model uses the absolute third entry base if it reaches this share of
+#: validation days at that threshold; otherwise its own validation p80 is used.
+ABSOLUTE_FALLBACK_ENTRY = 0.52
+DAYS_SHARE_FOR_ABSOLUTE = 0.50
+
+#: R34: a run whose entries are more than this share decided by the symbol
+#: tie-break is flagged and excluded from selection.
+MAX_TIE_BREAK_SHARE = 0.05
+
+
+def eligibility(stats: dict[str, float]) -> tuple[bool, str]:
+    """Apply the R31 rule to one model's validation distribution.
+
+    Args:
+        stats: `tied_share` (share of rows at the single most common `prob_up`) and
+            `p95_minus_p50`.
+
+    Returns:
+        `(eligible, reason)`.
+    """
+    reasons = []
+    if stats["tied_share"] > MAX_TIED_SHARE:
+        reasons.append(f"tied share {stats['tied_share']:.2%} exceeds {MAX_TIED_SHARE:.0%}")
+    if stats["p95_minus_p50"] < MIN_P95_P50_SPREAD:
+        reasons.append(f"p95-p50 {stats['p95_minus_p50']:.4f} below {MIN_P95_P50_SPREAD}")
+    return (not reasons, "; ".join(reasons) or "eligible")
+
+
 def _is_finite(value: Any) -> bool:
     """True for a real number, False for NaN and None."""
     try:
@@ -121,6 +154,100 @@ def calibration_rows(engine: Any, cfg: dict[str, Any], models: list[str]) -> lis
     return rows
 
 
+def distribution_stats(engine: Any, cfg: dict[str, Any], model: str) -> dict[str, float]:
+    """Validation-year `prob_up` distribution for one model. No returns are read.
+
+    Returns:
+        `p50`, `p80`, `p95`, `p99`, `max`, `distinct`, `tied_share`, `p95_minus_p50`.
+    """
+    import numpy as np
+
+    from src.common.db import read_sql
+
+    start = int(str(cfg["splits"]["validation_start"]).replace("-", ""))
+    end = int(str(cfg["splits"]["validation_end"]).replace("-", ""))
+    df = read_sql(
+        engine,
+        "SELECT f.prob_up AS prob_up FROM fact_signal f "
+        "JOIN dim_model m ON m.model_key = f.model_key "
+        "WHERE m.model_name = :model AND f.date_key BETWEEN :a AND :b",
+        {"model": model, "a": start, "b": end},
+    )
+    if df.empty:
+        return {
+            "p50": float("nan"),
+            "p80": float("nan"),
+            "p95": float("nan"),
+            "p99": float("nan"),
+            "max": float("nan"),
+            "distinct": 0,
+            "tied_share": 1.0,
+            "p95_minus_p50": 0.0,
+        }
+
+    values = df["prob_up"].to_numpy()
+    _, counts = np.unique(np.round(values, 12), return_counts=True)
+    p50, p80, p95, p99 = (float(np.percentile(values, q)) for q in (50, 80, 95, 99))
+    return {
+        "p50": p50,
+        "p80": p80,
+        "p95": p95,
+        "p99": p99,
+        "max": float(values.max()),
+        "distinct": int(len(counts)),
+        "tied_share": float(counts.max() / values.size),
+        "p95_minus_p50": p95 - p50,
+    }
+
+
+def plan_models(engine: Any, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """R31-R33: eligibility plus the per-model third entry base and method."""
+    models = list(cfg["tuning"]["models"])
+    entries = [float(e) for e in cfg["tuning"]["entry_base_grid"]]
+    need = math.ceil(min(cfg["tuning"]["slots_grid"]) / 2)
+
+    plan: list[dict[str, Any]] = []
+    for model in models:
+        stats = distribution_stats(engine, cfg, model)
+        ok, reason = eligibility(stats)
+        if not ok:
+            plan.append(
+                {
+                    "model": model,
+                    "eligible": False,
+                    "reason": reason,
+                    "entries": [],
+                    "method": "excluded",
+                    "stats": stats,
+                }
+            )
+            continue
+
+        share, _days = candidate_day_share(engine, cfg, model, ABSOLUTE_FALLBACK_ENTRY, need)
+        if share >= DAYS_SHARE_FOR_ABSOLUTE:
+            third, method = ABSOLUTE_FALLBACK_ENTRY, "absolute"
+        else:
+            third, method = round(stats["p80"], 6), "percentile_p80"
+        third = round(float(third), 6)
+
+        model_entries = list(entries)
+        if third not in model_entries:
+            model_entries.append(third)
+        plan.append(
+            {
+                "model": model,
+                "eligible": True,
+                "reason": "eligible",
+                "entries": model_entries,
+                "method": method,
+                "third_entry": third,
+                "share_at_fallback": share,
+                "stats": stats,
+            }
+        )
+    return plan
+
+
 def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
     """Run the calibration check and the grid, then write the frozen config.
 
@@ -140,21 +267,17 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
     engine = get_engine(cfg)
 
     models = list(cfg["tuning"]["models"])
-    entries = [float(e) for e in cfg["tuning"]["entry_base_grid"]]
     slots_grid = [int(s) for s in cfg["tuning"]["slots_grid"]]
 
-    # Steps 1 and 2: calibration, then the fallback.
+    # Step 1: report the shared-threshold calibration share for every model, so the
+    # log keeps the record of why the absolute fallback cannot fit all four.
     calibration = calibration_rows(engine, cfg, models)
-    fallback_models = {r["model"] for r in calibration if r["fallback"]}
-    if not apply_fallback:
-        fallback_models = set()
-
-    fallback_entry = float(cfg["strategy"]["fallback_entry_base"])
-    method = "threshold"
-    if fallback_models:
-        method = "rank_fallback"
+    for row in calibration:
         log.info(
-            "fallback entry_base %s for: %s", fallback_entry, ", ".join(sorted(fallback_models))
+            "calibration %s: candidate_day_share at %.2f = %.4f",
+            row["model"],
+            float(cfg["strategy"]["fallback_entry_base"]),
+            float(row["candidate_day_share"]),
         )
 
     start = str(cfg["splits"]["validation_start"])
@@ -163,11 +286,30 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
     # The frozen config must not bias the grid it is choosing (`DECISIONS` R24).
     tuning_cfg = {**cfg, "strategy": {**cfg["strategy"], "selected_model": None}}
 
+    # R31-R33: eligibility decides which models are tuned, and the third entry base
+    # and its method are chosen per model from that model's own distribution.
+    plan = plan_models(engine, cfg)
+    eligible = [p for p in plan if p["eligible"]]
+    excluded = [p for p in plan if not p["eligible"]]
+    for p in excluded:
+        log.warning("%s excluded from tuning: %s", p["model"], p["reason"])
+    for p in eligible:
+        log.info(
+            "%s eligible: entries %s (third %s via %s)",
+            p["model"],
+            p["entries"],
+            p["third_entry"],
+            p["method"],
+        )
+
     results: list[dict[str, Any]] = []
-    for model in models:
-        model_entries = list(entries)
-        if model in fallback_models and fallback_entry not in model_entries:
-            model_entries.append(fallback_entry)
+    for spec in eligible:
+        model = spec["model"]
+        model_entries = (
+            spec["entries"]
+            if apply_fallback
+            else [float(e) for e in cfg["tuning"]["entry_base_grid"]]
+        )
         for entry in model_entries:
             for slots in slots_grid:
                 variant_cfg = {
@@ -191,6 +333,10 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
                 # Such a run must not win selection through a NaN comparison; it is
                 # still written to the CSV and the trial log, marked non-trading.
                 traded = bool(metrics["n_trades"]) and _is_finite(metrics["sharpe"])
+                tie_share = outcome.tie_break_share
+                tie_flagged = _is_finite(tie_share) and tie_share > MAX_TIE_BREAK_SHARE
+                if tie_flagged:
+                    traded = False
                 record = {
                     "model": model,
                     "entry_base": entry,
@@ -201,7 +347,11 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
                     "turnover": metrics["turnover"],
                     "n_trades": metrics["n_trades"],
                     "traded": traded,
-                    "method": "rank_fallback" if model in fallback_models else "threshold",
+                    "tie_break_share": tie_share,
+                    "tie_break_flagged": bool(tie_flagged),
+                    "new_entries": outcome.new_entries,
+                    "method": spec["method"],
+                    "entry_source": "grid",
                 }
                 results.append(record)
                 log_trial(
@@ -220,9 +370,19 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
                         "turnover": metrics["turnover"],
                         "n_trades": metrics["n_trades"],
                         "traded": traded,
+                        "tie_break_share": tie_share,
+                        "tie_break_flagged": bool(tie_flagged),
                         "method": record["method"],
                     },
-                    note="" if traded else "non-trading run: excluded from selection",
+                    note=(
+                        ""
+                        if traded
+                        else (
+                            "tie-break share above 5%: excluded from selection (R34)"
+                            if tie_flagged
+                            else "non-trading run: excluded from selection"
+                        )
+                    ),
                 )
                 log.info(
                     "%s entry=%.2f slots=%d -> sharpe %.4f",
@@ -254,6 +414,11 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
 
     frozen_path = Path(cfg["paths"]["frozen_config"])
     frozen_path.parent.mkdir(parents=True, exist_ok=True)
+    # R33: the method is recorded per model, not once for the whole run.
+    per_model_method = {p["model"]: p["method"] for p in plan}
+    excluded_models = {p["model"]: p["reason"] for p in excluded}
+    methods = set(per_model_method.values())
+    overall_method = methods.pop() if len(methods) == 1 else "mixed"
     frozen_path.write_text(
         yaml.safe_dump(
             {
@@ -263,10 +428,14 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
                     "slots": int(best["slots"]),
                 },
                 "meta": {
-                    "tuned_at": pd.Timestamp.utcnow().isoformat(),
+                    "tuned_at": pd.Timestamp.utcnow(tz="UTC").isoformat(),
                     "validation_sharpe": float(best["sharpe"]),
                     "trials": int(len(grid)),
-                    "method": method,
+                    "method": overall_method,
+                    "method_per_model": per_model_method,
+                    "excluded_from_tuning": excluded_models,
+                    "grid_trials": int(len(grid)),
+                    "total_logged_trials": count_trials(cfg) + len(grid),
                 },
             },
             sort_keys=False,
@@ -274,12 +443,13 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
         encoding="utf-8",
     )
     log.info(
-        "selected %s entry=%.2f slots=%d (sharpe %.4f) from %d trial(s)",
+        "selected %s entry=%.2f slots=%d (sharpe %.4f) from %d trial(s), method %s",
         best["model"],
         best["entry_base"],
         best["slots"],
         best["sharpe"],
         len(grid),
+        overall_method,
     )
 
     write_manifest(
@@ -291,20 +461,23 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
             "selected_model": str(best["model"]),
             "entry_base": float(best["entry_base"]),
             "slots": int(best["slots"]),
-            "method": method,
+            "method": overall_method,
         },
     )
 
     return {
         "trials": int(len(grid)),
         "non_trading_runs": int((~grid["traded"]).sum()),
-        "total_logged_trials": count_trials(cfg),
+        "tie_flagged_runs": int(grid["tie_break_flagged"].sum()),
+        "total_logged_trials": count_trials(cfg) + int(len(grid)),
         "selected_model": str(best["model"]),
         "entry_base": float(best["entry_base"]),
         "slots": int(best["slots"]),
         "validation_sharpe": float(best["sharpe"]),
-        "method": method,
-        "fallback_models": sorted(fallback_models),
+        "method": overall_method,
+        "method_per_model": per_model_method,
+        "eligible_models": [p["model"] for p in eligible],
+        "excluded_models": {p["model"]: p["reason"] for p in excluded},
     }
 
 

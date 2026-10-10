@@ -84,6 +84,24 @@ Format: **ID. Topic.** *Original:* what the blueprint said or left open. *Now:* 
 
 **R30. Code layout additions.** *Now:* `src/backtest/strategies.py` holds the weight providers V0 to V2 and B1 to B3; `baselines.py` runs them and B4; `tune.py` writes `tune_grid_validation.csv`; `baselines.py` writes `summary_validation.csv`; `final_test.py` is not guarded by running pytest (the `make final-test` target depends on `make check`). *Why:* removes ownership overlaps and a recursion between the guard and its own test.
 
+### Added during the build (Phase 5)
+
+**R31. Strategy-tuning eligibility rule (distribution only).** *Original:* `05` section 6 assumed an absolute entry grid would work and that a rank fallback would rescue a poorly calibrated model. *Now:* a model is **eligible for strategy tuning** if and only if both hold on the validation year's `prob_up` distribution:
+1. no single `prob_up` value holds more than **20%** of rows, and
+2. `p95 - p50 >= 0.01`.
+
+An ineligible model is excluded from the tuning grid only. It **remains** in the classifier comparison, `classifier_metrics.csv`, the trial log's `model_year` rows, and the validation diagnostics. *Written:* after seeing the decision tree's `prob_up` distribution and **before any strategy outcome for that model** — no backtest, Sharpe, return or accuracy was consulted when fixing these numbers. Returns were not used at any point: both conditions read only the distribution of predictions. *Why:* the rule exists because a model with a large mass of tied probabilities defeats any absolute threshold. With a tied mass at or below the threshold, nearly every stock qualifies on nearly every day, and `target_weights` then breaks the tie by symbol A to Z, producing an alphabetical portfolio that looks like a strategy but carries no information. Measured on the validation year, the tree has **3 distinct `prob_up` values across 12,044 rows with 76.4% tied at one value**; the other three models have ~12,000 distinct values with 0.01–0.02% tied. Both thresholds sit in wide empty gaps (no model is within an order of magnitude of either boundary), so the rule is not knife-edge.
+
+**R32. Effect of ineligibility.** *Now:* the decision tree fails both conditions (76.4% tied, `p95 - p50 = 0.0000`) and is therefore **excluded from strategy tuning**. It is still trained, still written to `fact_signal`, still scored, and still reported in the classifier comparison and the validation diagnostics, because excluding it from tuning is not a claim that it is a poor classifier — it is a claim that its probabilities cannot drive a threshold-based portfolio. *Why:* keeps the honest negative result about the classifier separate from the practical limitation of its probability scale.
+
+**R33. Per-model threshold method.** *Now:* for each **eligible** model, the third entry base is chosen from the model's own validation distribution, never from returns. Keep `0.55` and `0.60` for every eligible model. The third entry base is:
+- **`0.52`** (the shared absolute fallback) when the model reaches `0.52` on at least **50%** of validation days; method recorded as `absolute`;
+- otherwise the model's own validation **p80** of `prob_up`; method recorded as `percentile_p80`.
+
+Measured: xgb reaches 0.52 on 60.0% of days, so it uses the absolute grid `{0.55, 0.60, 0.52}`. logreg (15.5%) and rf (13.9%) do not, so their third entry base is their validation p80 (0.5024 and 0.5044 respectively). `frozen_config`'s `meta.method` records the method **per model**, not once for the run. *Why:* a single absolute threshold cannot fit probability distributions on four different scales; p80 is a distributional quantile, so using it cannot leak outcome information.
+
+**R34. Tie-break share must be reported and can disqualify a run.** *Now:* every tuning and baseline run reports the share of newly entered positions whose selection was decided by the symbol tie-break rather than by probability. If that share exceeds **5%**, the run is flagged in `tune_grid_validation.csv` (`tie_break_flagged = 1`) and **excluded from selection**, with a note in the trial log. Non-trading runs and tie-break-heavy runs are both excluded from selection but both remain in the CSV and the trial log. *Why:* makes the hazard in R31 measurable at run time instead of only being argued from the distribution.
+
 ---
 
 ## 3. Open questions (agent: do not block on these; use the stated default)

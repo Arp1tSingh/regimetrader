@@ -54,6 +54,7 @@ def target_weights(
     exit_prob: float = 0.50,
     force_exit: frozenset[str] = frozenset(),
     no_entry: frozenset[str] = frozenset(),
+    diagnostics: dict[str, float] | None = None,
 ) -> pd.Series:
     """Target weight per symbol for the next open.
 
@@ -71,12 +72,18 @@ def target_weights(
         exit_prob: Hold while `prob_up >= exit_prob`.
         force_exit: Stop-loss names: dropped now and cannot be re-entered.
         no_entry: Names that cannot be newly entered but may be kept if held.
+        diagnostics: Optional dict, filled in place with `new_entries` and
+            `tie_broken_entries`. A new entry is tie-broken when a candidate it
+            beat or tied shares its exact `prob_up` (`DECISIONS` R34). Adding an
+            optional keyword does not change any documented call.
 
     Returns:
         A Series of target weights indexed by symbol. Empty in a zero-exposure regime.
     """
     rule = rules[regime]
     if float(rule["exposure"]) == NO_EXPOSURE:
+        if diagnostics is not None:
+            diagnostics.update({"new_entries": 0, "tie_broken_entries": 0})
         return pd.Series(dtype=float)
 
     probs = day_signals["prob_up"]
@@ -99,6 +106,20 @@ def target_weights(
 
     free_slots = max(int(slots) - len(keep), 0)
     new = eligible.head(free_slots).index.tolist()
+
+    if diagnostics is not None:
+        # A new entry was decided by the symbol tie-break when it shares the boundary
+        # probability with the first rejected candidate. Candidates are ranked by
+        # probability, so only entries sitting exactly on the cutoff probability were
+        # chosen by alphabetical order rather than by a higher probability (R34).
+        if free_slots and len(eligible) > free_slots:
+            cutoff = round(float(eligible.iloc[free_slots]), 12)
+            boundary = sum(
+                1 for v in eligible.head(free_slots).to_numpy() if round(float(v), 12) == cutoff
+            )
+        else:
+            boundary = 0
+        diagnostics.update({"new_entries": len(new), "tie_broken_entries": boundary})
 
     chosen = keep + list(new)
     if not chosen:
