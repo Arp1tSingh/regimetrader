@@ -58,7 +58,9 @@ def _read_universe_file(path: Path) -> pd.DataFrame:
     # `csv.DictReader` has no `comment` parameter (only `csv.reader` does), so
     # `#` lines are filtered out before parsing.
     lines = [
-        line for line in path.read_text(encoding="utf-8-sig").splitlines() if not line.lstrip().startswith("#")
+        line
+        for line in path.read_text(encoding="utf-8-sig").splitlines()
+        if not line.lstrip().startswith("#")
     ]
     rows = list(csv.DictReader(lines))
 
@@ -84,7 +86,9 @@ def _validate(df: pd.DataFrame, path: Path) -> None:
     if df["symbol"].isna().any() or (df["symbol"] == "").any():
         raise UniverseError(f"universe file {path} has a blank symbol")
 
-    duplicates = sorted(df.loc[df["symbol"].duplicated(), "symbol"].unique().tolist())
+    duplicates = sorted(
+        df.loc[df["symbol"].duplicated(), "symbol"].dropna().unique().tolist()
+    )
     if duplicates:
         raise UniverseError(f"universe file {path} has duplicate symbol(s): {', '.join(duplicates)}")
 
