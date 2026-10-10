@@ -1,0 +1,23 @@
+{
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\features\\builder.py --indicators --config config/config.yaml",
+  "config_hash": "22dfa4b3e6b6",
+  "data_range": {
+    "first_date_key": 20150102,
+    "last_date_key": 20261009
+  },
+  "extra": {
+    "rows": 140583
+  },
+  "git_commit": "ba676ce84ff5dc49c589bb9e2176d7c7c32e5815",
+  "models_used": [],
+  "package_versions": {
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "python": "3.14.8",
+    "scikit-learn": "1.9.1",
+    "xgboost": "3.4.1"
+  },
+  "run_id": "features_indicators",
+  "seed": 42,
+  "timestamp": "2026-10-10T07:58:44+00:00"
+}
