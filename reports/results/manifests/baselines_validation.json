@@ -1,5 +1,5 @@
 {
-  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\backtest\\baselines.py --config config/config.yaml --period validation --sims 3",
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\backtest\\baselines.py --config config/config.yaml --period validation --sims 5",
   "config_hash": "e385308b80af",
   "data_range": {
     "first_date_key": 20150102,
@@ -10,7 +10,7 @@
     "period": "validation",
     "rows": 3
   },
-  "git_commit": "409983532f536005109dc2f62e8bf61de925a076",
+  "git_commit": "386ab8dcc6c46cf3e597080983e9224ee7d4ee44",
   "models_used": [],
   "package_versions": {
     "numpy": "2.5.3",
@@ -21,5 +21,5 @@
   },
   "run_id": "baselines_validation",
   "seed": 42,
-  "timestamp": "2026-10-10T11:20:32+00:00"
+  "timestamp": "2026-10-10T11:41:52+00:00"
 }

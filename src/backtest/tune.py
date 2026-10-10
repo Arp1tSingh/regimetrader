@@ -56,6 +56,162 @@ DAYS_SHARE_FOR_ABSOLUTE = 0.50
 #: tie-break is flagged and excluded from selection.
 MAX_TIE_BREAK_SHARE = 0.05
 
+#: R39 activity filter. 30 round trips is the smallest sample whose trade-level hit
+#: rate has a usable standard error (about 9 points near 50%); below 10% mean exposure
+#: the Sharpe is computed on a handful of active days.
+MIN_ROUND_TRIPS = 30
+MIN_EXPOSURE = 0.10
+
+#: R40 null filter.
+NULL_SHORTLIST_SIZE = 3
+NULL_SIMS = 100
+NULL_PERCENTILE = 90.0
+
+#: R41: the spec's starting strategy settings, used when nothing survives.
+DEFAULT_ENTRY_BASE = 0.55
+DEFAULT_SLOTS = 10
+
+
+def _activity_eligible(grid: pd.DataFrame) -> pd.DataFrame:
+    """Rows passing the R39 activity filter, with a finite Sharpe.
+
+    NaN Sharpes are dropped here rather than sorted around: relying on pandas placing
+    NaN last would hide the exclusion and could let a NaN win under a sort change.
+    """
+    if grid.empty:
+        return grid
+    mask = (
+        grid["traded"].astype(bool)
+        & grid["sharpe"].notna()
+        & (grid["n_trades"].fillna(0).astype(int) >= MIN_ROUND_TRIPS)
+        & (grid["exposure"].fillna(0.0).astype(float) >= MIN_EXPOSURE)
+        & ~grid["tie_break_flagged"].astype(bool)
+    )
+    return grid[mask]
+
+
+def _null_percentile(
+    cfg: dict[str, Any],
+    engine: Any,
+    row: pd.Series,
+    start: str,
+    end: str,
+    log: Any,
+) -> dict[str, Any]:
+    """R40: run this configuration's own B4 null and compare its Sharpe to it.
+
+    The null is run under the shortlisted configuration's own entry base and slots, not
+    a shared one, so exposure and turnover are matched.
+
+    Returns:
+        A dict describing the comparison, including the Series in `row`.
+    """
+    from src.backtest.baselines import b4_distribution
+
+    variant = {
+        **cfg,
+        "strategy": {
+            **cfg["strategy"],
+            "selected_model": str(row["model"]),
+            "entry_base": float(row["entry_base"]),
+            "slots": int(row["slots"]),
+        },
+    }
+    distribution = b4_distribution(
+        variant, engine, start, end, sims=NULL_SIMS, model=str(row["model"]), log=None
+    )
+    sharpes = distribution["sharpe"].dropna()
+    p90 = float(sharpes.quantile(NULL_PERCENTILE / 100.0)) if len(sharpes) else float("nan")
+    actual = float(row["sharpe"])
+    selectable = bool(_is_finite(p90) and _is_finite(actual) and actual > p90)
+
+    for sim_sharpe in sharpes:
+        log_trial(
+            cfg,
+            phase="tune",
+            kind="other",  # `07` section 4 pins kind to the five listed values
+            run_id=f"null_{row['model']}_{row['entry_base']:.4f}_{int(row['slots'])}",
+            model=str(row["model"]),
+            params={
+                "entry_base": float(row["entry_base"]),
+                "slots": int(row["slots"]),
+                "null": "b4_symbol_permutation",
+            },
+            period="validation",
+            metric="null_sharpe",
+            value=float(sim_sharpe),
+            extra={"actual_sharpe": actual, "null_p90": p90},
+            note="B4 permutation null for a shortlisted configuration (DECISIONS R40)",
+        )
+
+    log.info(
+        "null for %s/%.4f/%d: sharpe %.4f vs null p90 %.4f over %d sim(s) -> %s",
+        row["model"],
+        float(row["entry_base"]),
+        int(row["slots"]),
+        actual,
+        p90,
+        len(sharpes),
+        "selectable" if selectable else "NOT selectable",
+    )
+    return {
+        "model": str(row["model"]),
+        "entry_base": float(row["entry_base"]),
+        "slots": int(row["slots"]),
+        "sharpe": actual,
+        "n_trades": int(row["n_trades"]),
+        "exposure": float(row["exposure"]),
+        "null_p90": p90,
+        "null_sims": int(len(sharpes)),
+        "null_median": float(sharpes.median()) if len(sharpes) else float("nan"),
+        "selectable": selectable,
+        "row": row,
+    }
+
+
+def _no_edge_default(
+    cfg: dict[str, Any],
+    eligible: list[dict[str, Any]],
+    plan: list[dict[str, Any]],
+    aucs: dict[str, float] | None = None,
+) -> tuple[pd.Series, str]:
+    """R41: freeze the best classifier on the spec's starting settings.
+
+    The model is the one with the highest validation ROC-AUC among the
+    distribution-eligible models, so it still respects R31.
+
+    Args:
+        cfg: Loaded config.
+        eligible: Plan entries with `eligible` true.
+        plan: The whole plan, kept for symmetry with the caller.
+        aucs: Optional `model -> ROC-AUC` override. Read from
+            `classifier_metrics.csv` when omitted.
+
+    Returns:
+        `(row, "no_edge_default")`, where the row carries the spec's starting settings.
+    """
+    from src.models.diagnostics import roc_auc_by_model
+
+    scores = roc_auc_by_model(cfg) if aucs is None else aucs
+    names = [p["model"] for p in eligible]
+    finite = {m: float(scores[m]) for m in names if m in scores and _is_finite(scores[m])}
+    chosen = max(sorted(finite), key=lambda m: finite[m]) if finite else (
+        names[0] if names else cfg["tuning"]["models"][0]
+    )
+    return (
+        pd.Series(
+            {
+                "model": chosen,
+                "entry_base": DEFAULT_ENTRY_BASE,
+                "slots": DEFAULT_SLOTS,
+                "sharpe": float("nan"),
+                "n_trades": 0,
+                "exposure": float("nan"),
+            }
+        ),
+        "no_edge_default",
+    )
+
 
 def eligibility(stats: dict[str, float]) -> tuple[bool, str]:
     """Apply the R31 rule to one model's validation distribution.
@@ -346,6 +502,7 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
                     "max_drawdown": metrics["max_drawdown"],
                     "turnover": metrics["turnover"],
                     "n_trades": metrics["n_trades"],
+                    "exposure": metrics["exposure"],
                     "traded": traded,
                     "tie_break_share": tie_share,
                     "tie_break_flagged": bool(tie_flagged),
@@ -400,25 +557,68 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
         results_dir / "tune_grid_validation.csv", index=False
     )
 
-    # Step 4: highest Sharpe among runs that actually traded, tie-break lower turnover.
-    # Non-trading runs are excluded explicitly rather than by a silent NaN sort, because
-    # pandas puts NaN last anyway and relying on that would hide the exclusion.
-    tradable = grid[grid["traded"] & grid["sharpe"].notna()]
-    if tradable.empty:
-        raise TuningError(
-            f"no configuration traded on the validation period "
-            f"({int((~grid['traded']).sum())} of {len(grid)} runs never traded); "
-            "no model can be selected"
+    # ---------------------------------------------------------------- selection
+    # R42: Sharpe alone is never sufficient. A configuration must first clear the
+    # activity filter (R39) and then beat the B4 null for its own settings (R40).
+    candidates = _activity_eligible(grid)
+    log.info(
+        "activity filter (R39: n_trades >= %d, exposure >= %.0f%%): %d of %d configuration(s)",
+        MIN_ROUND_TRIPS,
+        MIN_EXPOSURE * 100,
+        len(candidates),
+        len(grid),
+    )
+    if not candidates.empty:
+        shortlist = candidates.sort_values(["sharpe", "turnover"], ascending=[False, True]).head(
+            NULL_SHORTLIST_SIZE
         )
-    best = tradable.sort_values(["sharpe", "turnover"], ascending=[False, True]).iloc[0]
+        log.info(
+            "shortlist (top %d by Sharpe): %s",
+            len(shortlist),
+            ", ".join(
+                f"{r['model']}/{r['entry_base']:.4f}/{int(r['slots'])} (sharpe {r['sharpe']:.4f})"
+                for _, r in shortlist.iterrows()
+            ),
+        )
+    else:
+        shortlist = grid.iloc[0:0]
+        log.warning("no configuration passed the activity filter (R39); nothing can be shortlisted")
+
+    null_results = []
+    for _, row in shortlist.iterrows():
+        null = _null_percentile(cfg, engine, row, start, end, log)
+        null_results.append(null)
+
+    passed = [n for n in null_results if n["selectable"]]
+    log.info(
+        "null filter (R40): %d of %d shortlisted configuration(s) beat their own "
+        "null's %.0fth percentile",
+        len(passed),
+        len(null_results),
+        NULL_PERCENTILE,
+    )
+
+    if passed:
+        best = passed[0]["row"]
+        method_outcome = "selected"
+        frozen_method = "activity_and_null_filtered"
+    else:
+        # R41: no configuration beat its own null. Freeze the best classifier on the
+        # spec's starting settings and say so, rather than promoting a failed run.
+        best, frozen_method = _no_edge_default(cfg, eligible, plan)
+        method_outcome = "no_edge_default"
+
+    results_dir = Path(cfg["paths"]["results"])
+    pd.DataFrame(null_results).drop(columns=["row"]).to_csv(
+        results_dir / "null_filter_validation.csv", index=False
+    )
+    log.info("wrote %s", results_dir / "null_filter_validation.csv")
 
     frozen_path = Path(cfg["paths"]["frozen_config"])
     frozen_path.parent.mkdir(parents=True, exist_ok=True)
-    # R33: the method is recorded per model, not once for the whole run.
+    # R33: the threshold method is recorded per model, not once for the whole run.
     per_model_method = {p["model"]: p["method"] for p in plan}
     excluded_models = {p["model"]: p["reason"] for p in excluded}
-    methods = set(per_model_method.values())
-    overall_method = methods.pop() if len(methods) == 1 else "mixed"
     frozen_path.write_text(
         yaml.safe_dump(
             {
@@ -429,13 +629,34 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
                 },
                 "meta": {
                     "tuned_at": pd.Timestamp.now(tz="UTC").isoformat(),
-                    "validation_sharpe": float(best["sharpe"]),
-                    "trials": int(len(grid)),
-                    "method": overall_method,
-                    "method_per_model": per_model_method,
+                    "method": frozen_method,
+                    "outcome": method_outcome,
+                    "demonstrated_edge": bool(method_outcome == "selected"),
+                    "validation_sharpe": (
+                        float(best["sharpe"]) if _is_finite(best["sharpe"]) else float("nan")
+                    ),
+                    "n_trades": int(best["n_trades"]),
+                    "exposure": float(best["exposure"]),
+                    "threshold_method_per_model": per_model_method,
                     "excluded_from_tuning": excluded_models,
+                    "activity_filter": {
+                        "min_round_trips": MIN_ROUND_TRIPS,
+                        "min_exposure": MIN_EXPOSURE,
+                        "passed": int(len(candidates)),
+                        "of": int(len(grid)),
+                    },
+                    "null_filter": {
+                        "sims": NULL_SIMS,
+                        "percentile": NULL_PERCENTILE,
+                        "shortlisted": int(len(null_results)),
+                        "passed": int(len(passed)),
+                    },
                     "grid_trials": int(len(grid)),
                     "total_logged_trials": count_trials(cfg),
+                    "disclosure": (
+                        "Selection filters R39-R42 were introduced after run 1 produced a "
+                        "degenerate 1-trade winner. Run 1 is preserved and still counted."
+                    ),
                 },
             },
             sort_keys=False,
@@ -443,13 +664,12 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
         encoding="utf-8",
     )
     log.info(
-        "selected %s entry=%.2f slots=%d (sharpe %.4f) from %d trial(s), method %s",
+        "outcome %s: %s entry=%.4f slots=%d (method %s)",
+        method_outcome,
         best["model"],
         best["entry_base"],
         best["slots"],
-        best["sharpe"],
-        len(grid),
-        overall_method,
+        frozen_method,
     )
 
     write_manifest(
@@ -458,10 +678,11 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
         engine,
         extra={
             "trials": int(len(grid)),
+            "outcome": method_outcome,
+            "method": frozen_method,
             "selected_model": str(best["model"]),
             "entry_base": float(best["entry_base"]),
             "slots": int(best["slots"]),
-            "method": overall_method,
         },
     )
 
@@ -469,13 +690,19 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
         "trials": int(len(grid)),
         "non_trading_runs": int((~grid["traded"]).sum()),
         "tie_flagged_runs": int(grid["tie_break_flagged"].sum()),
+        "activity_eligible": int(len(candidates)),
+        "shortlisted": int(len(null_results)),
+        "null_passed": int(len(passed)),
         "total_logged_trials": count_trials(cfg),
         "selected_model": str(best["model"]),
         "entry_base": float(best["entry_base"]),
         "slots": int(best["slots"]),
-        "validation_sharpe": float(best["sharpe"]),
-        "method": overall_method,
-        "method_per_model": per_model_method,
+        "validation_sharpe": (
+            float(best["sharpe"]) if _is_finite(best["sharpe"]) else float("nan")
+        ),
+        "outcome": method_outcome,
+        "method": frozen_method,
+        "threshold_method_per_model": per_model_method,
         "eligible_models": [p["model"] for p in eligible],
         "excluded_models": {p["model"]: p["reason"] for p in excluded},
     }

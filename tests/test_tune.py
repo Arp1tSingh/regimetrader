@@ -342,6 +342,199 @@ def test_tie_flagged_runs_are_excluded_from_selection() -> None:
     assert MAX_TIE_BREAK_SHARE == 0.05
 
 
+# --------------------------------------------------------------- activity filter
+
+
+def grid_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    """A grid frame with the columns the selection filters read."""
+    return pd.DataFrame(
+        [
+            {
+                "model": "rf",
+                "entry_base": 0.55,
+                "slots": 5,
+                "sharpe": 1.0,
+                "turnover": 0.5,
+                "n_trades": 10,
+                "exposure": 0.5,
+                "traded": True,
+                "tie_break_flagged": False,
+                **row,
+            }
+            for row in rows
+        ]
+    )
+
+
+def test_a_one_trade_run_is_excluded_by_the_activity_filter() -> None:
+    """R39: the run 1 winner traded once, so it must never reach the shortlist."""
+    from src.backtest.tune import MIN_ROUND_TRIPS, _activity_eligible
+
+    grid = grid_frame(
+        [
+            {"sharpe": 2.5679, "n_trades": 1, "exposure": 0.18},  # the degenerate winner
+            {"sharpe": 1.2, "n_trades": 300, "exposure": 0.4},
+        ]
+    )
+    eligible = _activity_eligible(grid)
+    assert list(eligible["sharpe"]) == [1.2], "a 1-trade run must not be selectable"
+    assert MIN_ROUND_TRIPS == 30
+
+
+def test_low_exposure_is_excluded_even_with_many_trades() -> None:
+    """R39 also requires at least 10% mean exposure."""
+    from src.backtest.tune import MIN_EXPOSURE, _activity_eligible
+
+    grid = grid_frame(
+        [
+            {"sharpe": 3.0, "n_trades": 500, "exposure": 0.02},
+            {"sharpe": 1.0, "n_trades": 100, "exposure": 0.10},  # exactly at the bound
+        ]
+    )
+    eligible = _activity_eligible(grid)
+    assert len(eligible) == 1
+    assert float(eligible.iloc[0]["exposure"]) == pytest.approx(MIN_EXPOSURE)
+    assert MIN_EXPOSURE == 0.10
+
+
+def test_activity_filter_keeps_the_run1_artifact_out_even_at_the_highest_sharpe() -> None:
+    """The specific failure mode: highest Sharpe, still not selectable."""
+    from src.backtest.tune import _activity_eligible
+
+    grid = grid_frame([{"sharpe": 99.0, "n_trades": 1, "exposure": 0.9}])
+    assert _activity_eligible(grid).empty
+
+
+# --------------------------------------------------------------- null filter
+
+
+def test_a_configuration_below_its_null_p90_is_not_selectable() -> None:
+    """R40: a Sharpe must beat what meaningless predictions achieve."""
+    from src.backtest.tune import NULL_PERCENTILE
+
+    null = pd.Series([0.5, 1.0, 1.4, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8, 3.0])
+    p90 = float(null.quantile(NULL_PERCENTILE / 100.0))
+    assert p90 > 2.0
+
+    # Below the null's 90th percentile, however good the Sharpe looks in absolute terms.
+    assert not bool(2.0 > p90)
+    # Above it, selectable.
+    assert bool(3.0 > p90)
+
+
+def test_null_percentile_and_filter_constants_are_the_recorded_ones() -> None:
+    from src.backtest.tune import NULL_PERCENTILE, NULL_SHORTLIST_SIZE, NULL_SIMS
+
+    assert NULL_SIMS == 100
+    assert NULL_PERCENTILE == 90.0
+    assert NULL_SHORTLIST_SIZE == 3
+
+
+def test_selection_never_depends_on_nan_ordering() -> None:
+    """NaN Sharpes are dropped, not sorted around.
+
+    Relying on pandas placing NaN last would hide the exclusion, and a future sort
+    change could let a NaN win. `_activity_eligible` must remove them explicitly.
+    """
+    from src.backtest.tune import _activity_eligible
+
+    grid = grid_frame(
+        [
+            {"sharpe": float("nan"), "n_trades": 500, "exposure": 0.5},
+            {"sharpe": float("nan"), "n_trades": 500, "exposure": 0.5},
+            {"sharpe": 1.5, "n_trades": 500, "exposure": 0.5},
+        ]
+    )
+    eligible = _activity_eligible(grid)
+    assert len(eligible) == 1
+    assert not eligible["sharpe"].isna().any()
+
+
+# --------------------------------------------------------------- no_edge_default
+
+
+def test_no_edge_default_picks_the_highest_auc_eligible_model() -> None:
+    """R41: the freeze names the best classifier, not a failed configuration."""
+    from src.backtest.tune import DEFAULT_ENTRY_BASE, DEFAULT_SLOTS, _no_edge_default
+
+    plan = [
+        {"model": "logreg", "eligible": True},
+        {"model": "rf", "eligible": True},
+        {"model": "tree", "eligible": False},
+        {"model": "xgb", "eligible": True},
+    ]
+    eligible = [p for p in plan if p["eligible"]]
+
+    # rf has the best eligible ROC-AUC; the tree's higher value must be ignored,
+    # because the tree failed the R31 eligibility rule.
+    best, method = _no_edge_default(
+        {},
+        eligible,
+        plan,
+        aucs={"logreg": 0.522, "rf": 0.527, "xgb": 0.522, "tree": 0.99},
+    )
+
+    assert method == "no_edge_default"
+    assert best["model"] == "rf", "the ineligible tree must not be chosen"
+    assert float(best["entry_base"]) == pytest.approx(DEFAULT_ENTRY_BASE)
+    assert int(best["slots"]) == DEFAULT_SLOTS
+
+
+def test_no_edge_default_falls_back_when_no_auc_is_available() -> None:
+    """It must still produce a valid freeze when the metrics file is missing."""
+    from src.backtest.tune import _no_edge_default
+
+    plan = [{"model": "logreg", "eligible": True}, {"model": "rf", "eligible": True}]
+    best, method = _no_edge_default({"paths": {"results": "no_such_dir"}}, plan, plan)
+    assert method == "no_edge_default"
+    assert best["model"] in {"logreg", "rf"}
+
+
+def test_frozen_meta_for_no_edge_default_says_so(tmp_path: Path) -> None:
+    """The frozen config must state the outcome, not imply a tuned winner."""
+    import yaml
+
+    from src.backtest.tune import DEFAULT_ENTRY_BASE, DEFAULT_SLOTS
+
+    record = {
+        "strategy": {"selected_model": "rf", "entry_base": 0.55, "slots": 10},
+        "meta": {
+            "method": "no_edge_default",
+            "outcome": "no_edge_default",
+            "demonstrated_edge": False,
+        },
+    }
+    path = tmp_path / "frozen.yaml"
+    path.write_text(yaml.safe_dump(record), encoding="utf-8")
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    assert loaded["meta"]["method"] == "no_edge_default"
+    assert loaded["meta"]["demonstrated_edge"] is False
+    assert loaded["meta"]["outcome"] != "selected"
+    assert float(loaded["strategy"]["entry_base"]) == pytest.approx(DEFAULT_ENTRY_BASE)
+    assert int(loaded["strategy"]["slots"]) == DEFAULT_SLOTS
+
+
+def test_run1_is_preserved_and_still_counted(cfg_base: dict[str, Any]) -> None:
+    """R43: the first grid's output survives and its rows remain trials."""
+    from src.backtest.tune import count_trials
+    from src.common.trial_log import read_trials
+
+    path = Path(cfg_base["paths"]["results"]) / "tune_grid_validation_run1.csv"
+    assert path.exists(), "run 1's grid output must be preserved unaltered"
+    run1 = pd.read_csv(path)
+    assert len(run1) == 18
+    assert run1["n_trades"].max() >= 1
+
+    revisions = [
+        row
+        for row in read_trials(cfg_base)
+        if "selection_rule_revision" in str(row.get("run_id", ""))
+    ]
+    assert revisions, "the trial log must record that the selection rule was revised"
+    assert count_trials(cfg_base) >= len(run1)
+
+
 # --------------------------------------------------------------- calibration
 
 
