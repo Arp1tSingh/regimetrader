@@ -6,13 +6,13 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 
 ## Current position
 
-- Phase: 0
-- Next task: T0.4
-- Last gate passed: none
+- Phase: 1
+- Next task: T1.1
+- Last gate passed: **P0** (`make check`, 78 tests, ruff clean)
 
 ## Checklist
 
-**Phase 0 Scaffold:** [x] T0.1 [x] T0.2 [x] T0.3 [ ] T0.4 [ ] T0.5
+**Phase 0 Scaffold:** [x] T0.1 [x] T0.2 [x] T0.3 [x] T0.4 [x] T0.5
 **Phase 1 Warehouse and ETL:** [ ] T1.1 [ ] T1.2 [ ] T1.3 [ ] T1.4 [ ] T1.5 [ ] T1.6 [ ] T1.7 [ ] T1.8
 **Phase 2 Indicators and OLAP:** [ ] T2.1 [ ] T2.2
 **Phase 3 Regimes:** [ ] T3.1 [ ] T3.2 [ ] T3.3 [ ] T3.4 [ ] T3.5
@@ -47,6 +47,9 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 | 2026-10-10 | T0.1 | Repo skeleton created from `07§1`: 24 folders, 13 `__init__.py`, `.gitkeep` files. `git init` on branch `main` (git 2.55.0 present, contrary to the note in the pack). |
 | 2026-10-10 | T0.2 | venv at `.venv`, Python **3.14.8** (only interpreter on this machine; `python3` absent). All 39 packages from `requirements.txt` installed cleanly. Versions resolve newer than spec minimums: pandas 3.0.6, numpy 2.5.3, scikit-learn 1.9.1, xgboost 3.4.1, streamlit 1.65.0. Acceptance import check exits 0. |
 | 2026-10-10 | T0.3 | `src/common/config.py` with `extends`, override precedence, frozen-config whitelist, `config_hash()`, path resolution, output-folder creation, split-order validation. 19 tests pass. `make check` green. |
+| 2026-10-10 | T0.4 | `src/common/`: `db.py` (engine with `foreign_keys=ON` + WAL, `init_db` via `executescript`, `read_sql`, `execute_many`), `log.py`, `trial_log.py` (upsert on the R28 key), `manifest.py`, `seeds.py`, `dates.py`. 46 tests pass. `init_db` applies the schema twice without error. |
+| 2026-10-10 | T0.5 | `tests/test_schema.py`: all 13 tables from `03§2` exist with the documented primary keys, `dim_regime` has its 4 seed rows, CHECK constraints on `instrument_type` and `fact_trade.reason` reject bad values, no extra tables. |
+| 2026-10-10 | **Gate P0** | `make check` passes: ruff clean, **78 tests** green in ~14s. |
 
 ## Blockers
 
