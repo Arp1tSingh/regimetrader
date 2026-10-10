@@ -146,8 +146,12 @@ def test_providers_are_fresh_objects() -> None:
 
 
 @pytest.mark.slow
-def test_variants_differ_on_real_signals(signals_ready: tuple) -> None:
-    """V0, V1 and V2 must produce different equity curves on smoke data."""
+def test_variants_differ_on_smoke_signals(signals_ready: tuple) -> None:
+    """V0, V1 and V2 must produce different equity curves.
+
+    This runs on the **synthetic** smoke warehouse, not real data: it checks that the
+    providers are wired differently, not that any variant is profitable.
+    """
     from src.backtest.engine import run_backtest
     from src.backtest.strategies import make_weights_fn as build
 

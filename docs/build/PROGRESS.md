@@ -7,13 +7,66 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 ## Current position
 
 - Phase: 5
-- Next task: T5.4 (backtest engine)
-- Last gate passed: **P3** (`make check`, 336 fast tests). Phases 3 and 4 complete.
+- Next task: T5.6 (tuning grid) — **check with the human first if the grid or the entry-threshold fallback changes**
+- Last gate passed: **P4** (`make check && make smoke`). Phases 3 and 4 complete; T5.1-T5.5 done.
+- Test count: **352 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **373 total** with the slow set.
+
+## Pre-registered expectation (written before any backtest result exists)
+
+**2026-10-10.** Recorded now, before T5.6 tuning and before the one-time final test,
+so the result cannot be reframed afterwards.
+
+> **Expect the strategy to trail buy-and-hold on return. Drawdown and Sharpe are the
+> open questions.**
+
+Basis, stated up front: the best classifier (decision tree) scored **0.5316** against a
+**0.5072** majority baseline on the validation year, an edge of **+2.44 points**. Two of
+the four models scored *below* the baseline. After 0.30% round-trip costs, a directional
+edge that small is very unlikely to survive. The regime exposure rules reduce exposure in
+HIGH_VOL and go to cash in BEAR, which may help drawdown and Sharpe, but that is the open
+question, not the expectation.
+
+If the test period instead shows the strategy beating buy-and-hold on return, that
+result will be reported as anomalous and investigated rather than presented as success.
+
+## Honest scope of results so far
+
+- **No backtest has ever run on the real warehouse.** `fact_trade` and
+  `fact_portfolio_daily` are both empty and `fact_signal.signal` / `target_weight` are
+  still 0 everywhere, as `DECISIONS` R3 requires.
+- The **+2.44** figure is a **validation-year classifier accuracy** (`period =
+  "validation"`, `run_id = wf2023`), from `src/models/train.py`. It is not a strategy
+  return and not a test-period number.
+- It came from the **untuned default settings**: `models.tree` defaults
+  (`max_depth=4`, `min_samples_leaf=200`), `strategy.entry_base=0.55`, `slots=10`, and
+  `config/frozen_config.yaml` does not exist yet. No tuning has run.
+- The **V0/V1/V2 comparison ran on the SYNTHETIC smoke warehouse**, not real data. It
+  only confirms the three providers are wired differently; it informed no decision. The
+  test is named `test_variants_differ_on_smoke_signals` (it was previously misnamed
+  `..._on_real_signals`, which was wrong).
+- Verified on 2026-10-10 that the period guard genuinely refuses test-period data:
+  `end=2023-12-31` allowed, `end=2024-01-02` and `end=2026-10-09` both raise
+  `ValueError` against `test_start=2024-01-01`.
+
+## Stop and check with the human before
+
+1. **T6.2, the one-time final test.** The lock is created once and nobody runs it casually.
+2. **Any `paper_live` run on real data.**
+3. **T5.6, if the grid size or the entry-threshold fallback changes**, because that
+   changes the reported trial count.
 
 ## Log
 
 | Date | Task | Result and notes |
 |---|---|---|
+| 2026-10-10 | T5.4 | `src/backtest/engine.py`: EXECUTE -> MARK -> DECIDE -> STORE ordering, `DayContext`, `run_backtest` with the test-period guard, `fact_trade` and `fact_portfolio_daily` written by run_id (idempotent), `write_signals` reserved for the primary run. 10 tests. **Fill-timing test proves no look-ahead**: with `close_t=100` and `open_(t+1)=200`, the fill is 200. |
+| 2026-10-10 | T5.4 | **Bug fixed**: `running_max` was computed from previous rows only, so every new equity high produced a *negative* drawdown (-0.0017 instead of 0), understating drawdown in all results. |
+| 2026-10-10 | T5.4 | **Bug fixed**: the stop-loss cooldown was registered when the stop *triggered* rather than when the exit *filled*, so `cooldown_days` counted from the wrong date. Now starts at the exit and counts real trading days. |
+| 2026-10-10 | T5.5 | `src/backtest/strategies.py`: V0 (classifier only, BULL rule everywhere), V1 (regime filter only, BULL only), V2 (full strategy), B1 (buy and hold, trades once then None), B2 (equal weight, month-end rebalance), B3 (index). 11 tests. |
+| 2026-10-10 | T5.5 | Test fixtures consolidated into `tests/conftest.py` (`engine`, `loaded`, `panel_ready`, `signals_ready`). They had been duplicated across four modules with inconsistent return orders (`(engine, cfg)` vs `(cfg, engine)`), causing `TypeError: 'Engine' object is not a mapping`. |
+| 2026-10-10 | T5.5 | **Correction to an earlier claim.** The V0/V1/V2 comparison runs on the **synthetic smoke warehouse**, not real data. The test was misnamed `test_variants_differ_on_real_signals`, now `test_variants_differ_on_smoke_signals`. It only proves the providers are wired differently. The three runs are logged as trials with `period=synthetic_smoke` and a note that they informed no decision. |
+| 2026-10-10 | audit | Verified the period guard empirically against the real config: `end=2023-12-31` allowed; `end=2024-01-02` and `end=2026-10-09` both raise `ValueError` against `test_start=2024-01-01`. Confirmed **no backtest has ever run on the real warehouse** (`fact_trade` and `fact_portfolio_daily` empty, `signal` and `target_weight` still 0). |
+| 2026-10-10 | audit | **Pre-registered expectation written before any backtest result exists**, so it cannot be reframed afterwards. See the "Pre-registered expectation" section above. |
 | 2026-10-10 | T4.1 | `src/features/panel.py`: **135,135 rows**, 50 symbols, 19 active features, **zero NaN**, up share 50.68%. `FEATURE_COLS_ALL` is the documented 19 names in order; `get_feature_cols(False)` gives 18 and still keeps all four regime one-hots. Single `# label-only` forward shift. |
 | 2026-10-10 | T4.1 | **Leakage verified on the real warehouse, not only in tests**: deleting every `fact_price` row after 2021-12-31 and rebuilding the panel left all **76,690** earlier rows byte-identical. |
 | 2026-10-10 | T4.2 | `src/models/preprocessing.py` and `factory.py`: `Winsorizer` limits equal the fit data's 1st/99th percentiles and never move when other data is transformed; one-hot columns are never clipped. Four pipelines, all seeded from `project.seed`. |
@@ -46,7 +99,9 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 **Gate P2:** `make check && make smoke`. **PASSED.**
 **Phase 3 Regimes:** [x] T3.1 [x] T3.2 [x] T3.3 [x] T3.4 [x] T3.5
 **Phase 4 Classifiers:** [x] T4.1 [x] T4.2 [x] T4.3 [x] T4.4 [x] T4.5
-**Phase 5 Strategy and backtest:** [x] T5.1 [x] T5.2 [x] T5.3 [ ] T5.4 [ ] T5.5 [ ] T5.6 [ ] T5.7 [ ] T5.8
+**Phase 5 Strategy and backtest:** [x] T5.1 [x] T5.2 [x] T5.3 [x] T5.4 [x] T5.5 [ ] T5.6 [ ] T5.7 [ ] T5.8
+
+**Gate P4:** `make check && make smoke`. **PASSED** — 352 fast tests, 373 total.
 **Phase 6 Final evaluation:** [ ] T6.1 [ ] T6.2 [ ] T6.3 [ ] T6.4
 **Phase 7 Paper trading:** [ ] T7.1 [ ] T7.2 [ ] T7.3 [ ] T7.4 [ ] T7.5
 **Phase 8 Dashboard:** [ ] T8.1 [ ] T8.2
@@ -63,9 +118,9 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 | VIX used in regimes (yes or no) and coverage | |
 | Chosen k and why | |
 | Regime day counts (BULL / SIDEWAYS / HIGH_VOL / BEAR) | |
-| Selected model, `entry_base`, `slots` (from validation) | pending T5.6 |
-| Classifier accuracy versus majority baseline (per model, validation) | **tree 0.5316** · rf 0.5125 · xgb 0.5059 · logreg 0.4980; majority baseline **0.5072** |
-| Total trials logged | 5 regime_k + 4 model_year = 9 so far |
+| Selected model, `entry_base`, `slots` (from validation) | not yet tuned (T5.6). Defaults in use: `entry_base` 0.55, `slots` 10, model untuned |
+| Classifier accuracy versus majority baseline (per model, validation year 2023) | **tree 0.5316** · rf 0.5125 · xgb 0.5059 · logreg 0.4980; majority baseline **0.5072** |
+| Total trials logged | **real warehouse: 9** (5 regime_k + 4 model_year). Smoke warehouse: 12 (adds 3 synthetic V0/V1/V2 wiring checks, not real results). Trial count will change if T5.6's grid or fallback changes |
 | Test period evaluated? (date, lock file) | |
 | Headline test results (strategy vs B1) | |
 
