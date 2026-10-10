@@ -95,9 +95,7 @@ def test_frozen_config_applied_last_and_restricted(tmp_path: Path) -> None:
     )
     override = tmp_path / "override.yaml"
     override.write_text(
-        yaml.safe_dump(
-            {"extends": "config/config.yaml", "paths": {"frozen_config": str(frozen)}}
-        ),
+        yaml.safe_dump({"extends": "config/config.yaml", "paths": {"frozen_config": str(frozen)}}),
         encoding="utf-8",
     )
 
@@ -115,9 +113,7 @@ def test_frozen_config_absent_is_fine(tmp_path: Path) -> None:
     missing = tmp_path / "nope.yaml"
     override = tmp_path / "override.yaml"
     override.write_text(
-        yaml.safe_dump(
-            {"extends": "config/config.yaml", "paths": {"frozen_config": str(missing)}}
-        ),
+        yaml.safe_dump({"extends": "config/config.yaml", "paths": {"frozen_config": str(missing)}}),
         encoding="utf-8",
     )
     assert load_config(str(override))["project"]["seed"] == 42
@@ -126,7 +122,15 @@ def test_frozen_config_absent_is_fine(tmp_path: Path) -> None:
 def test_output_folders_are_created(tmp_path: Path) -> None:
     override = tmp_path / "override.yaml"
     all_keys = (
-        "db", "raw", "external", "processed", "models", "results", "figures", "daily", "logs"
+        "db",
+        "raw",
+        "external",
+        "processed",
+        "models",
+        "results",
+        "figures",
+        "daily",
+        "logs",
     )
     paths = {key: str(tmp_path / key) for key in all_keys}
     paths["frozen_config"] = str(tmp_path / "frozen.yaml")

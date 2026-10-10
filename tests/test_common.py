@@ -74,9 +74,19 @@ def test_init_db_is_idempotent(cfg_smoke: dict[str, Any]) -> None:
 
     tables = set(inspect(engine).get_table_names())
     for expected in (
-        "stg_price_raw", "etl_run_log", "dim_date", "dim_stock", "dim_regime",
-        "dim_model", "fact_price", "fact_indicator", "fact_market_regime",
-        "fact_signal", "fact_trade", "fact_portfolio_daily", "pending_target",
+        "stg_price_raw",
+        "etl_run_log",
+        "dim_date",
+        "dim_stock",
+        "dim_regime",
+        "dim_model",
+        "fact_price",
+        "fact_indicator",
+        "fact_market_regime",
+        "fact_signal",
+        "fact_trade",
+        "fact_portfolio_daily",
+        "pending_target",
     ):
         assert expected in tables
 
@@ -105,8 +115,7 @@ def test_foreign_key_violation_is_rejected(cfg_smoke: dict[str, Any]) -> None:
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    "INSERT INTO fact_price (date_key, stock_key, close_price) "
-                    "VALUES (:d, :s, 1.0)"
+                    "INSERT INTO fact_price (date_key, stock_key, close_price) VALUES (:d, :s, 1.0)"
                 ),
                 {"d": 20991231, "s": 999},  # neither dim row exists
             )
@@ -174,10 +183,28 @@ def test_seed_everything_uses_config_seed() -> None:
 def test_log_trial_writes_and_upserts(cfg_smoke: dict[str, Any]) -> None:
     """Rows are upserted on the key, so reruns never double-count (DECISIONS R28)."""
     params = {"entry_base": 0.55, "slots": 10}
-    log_trial(cfg_smoke, phase="dev", kind="strategy_grid", run_id="r1", model="rf",
-              params=params, period="validation", metric="sharpe", value=0.9)
-    log_trial(cfg_smoke, phase="dev", kind="strategy_grid", run_id="r1", model="rf",
-              params=params, period="validation", metric="sharpe", value=0.9)
+    log_trial(
+        cfg_smoke,
+        phase="dev",
+        kind="strategy_grid",
+        run_id="r1",
+        model="rf",
+        params=params,
+        period="validation",
+        metric="sharpe",
+        value=0.9,
+    )
+    log_trial(
+        cfg_smoke,
+        phase="dev",
+        kind="strategy_grid",
+        run_id="r1",
+        model="rf",
+        params=params,
+        period="validation",
+        metric="sharpe",
+        value=0.9,
+    )
 
     df = read_sql_path(cfg_smoke, "trial_log.csv")
     assert len(df) == 1
@@ -186,26 +213,68 @@ def test_log_trial_writes_and_upserts(cfg_smoke: dict[str, Any]) -> None:
 
 
 def test_log_trial_distinct_configs_count_separately(cfg_smoke: dict[str, Any]) -> None:
-    log_trial(cfg_smoke, phase="dev", kind="strategy_grid", run_id="r1", model="rf",
-              params={"entry_base": 0.55}, period="validation", metric="sharpe", value=0.9)
-    log_trial(cfg_smoke, phase="dev", kind="strategy_grid", run_id="r1", model="rf",
-              params={"entry_base": 0.60}, period="validation", metric="sharpe", value=0.8)
+    log_trial(
+        cfg_smoke,
+        phase="dev",
+        kind="strategy_grid",
+        run_id="r1",
+        model="rf",
+        params={"entry_base": 0.55},
+        period="validation",
+        metric="sharpe",
+        value=0.9,
+    )
+    log_trial(
+        cfg_smoke,
+        phase="dev",
+        kind="strategy_grid",
+        run_id="r1",
+        model="rf",
+        params={"entry_base": 0.60},
+        period="validation",
+        metric="sharpe",
+        value=0.8,
+    )
     assert count_trials(cfg_smoke) == 2
 
 
 def test_calibration_rows_are_not_counted_as_trials(cfg_smoke: dict[str, Any]) -> None:
     """R28: the reported experiment count excludes calibration diagnostics."""
-    log_trial(cfg_smoke, phase="dev", kind="strategy_grid", run_id="r1", model="rf",
-              period="validation", metric="sharpe", value=1.0)
-    log_trial(cfg_smoke, phase="dev", kind="calibration", run_id="r1", model="rf",
-              period="validation", metric="calibrated_accuracy", value=0.5)
+    log_trial(
+        cfg_smoke,
+        phase="dev",
+        kind="strategy_grid",
+        run_id="r1",
+        model="rf",
+        period="validation",
+        metric="sharpe",
+        value=1.0,
+    )
+    log_trial(
+        cfg_smoke,
+        phase="dev",
+        kind="calibration",
+        run_id="r1",
+        model="rf",
+        period="validation",
+        metric="calibrated_accuracy",
+        value=0.5,
+    )
     assert count_trials(cfg_smoke) == 1
 
 
 def test_log_trial_updates_value_on_rerun(cfg_smoke: dict[str, Any]) -> None:
     for value in (0.5, 0.7):
-        log_trial(cfg_smoke, phase="dev", kind="model_year", run_id="wf2023", model="xgb",
-                  period="validation", metric="accuracy", value=value)
+        log_trial(
+            cfg_smoke,
+            phase="dev",
+            kind="model_year",
+            run_id="wf2023",
+            model="xgb",
+            period="validation",
+            metric="accuracy",
+            value=value,
+        )
     df = read_sql_path(cfg_smoke, "trial_log.csv")
     assert len(df) == 1
     assert df.iloc[0]["value"] == 0.7
@@ -224,8 +293,16 @@ def test_write_manifest_contains_required_fields(cfg_smoke: dict[str, Any]) -> N
     data = json.loads(path.read_text(encoding="utf-8"))
 
     for key in (
-        "run_id", "timestamp", "git_commit", "config_hash", "seed",
-        "command_line", "package_versions", "data_range", "models_used", "extra",
+        "run_id",
+        "timestamp",
+        "git_commit",
+        "config_hash",
+        "seed",
+        "command_line",
+        "package_versions",
+        "data_range",
+        "models_used",
+        "extra",
     ):
         assert key in data
     assert data["run_id"] == "backtest_main"

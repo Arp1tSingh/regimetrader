@@ -86,9 +86,7 @@ def _validate(df: pd.DataFrame, path: Path) -> None:
     if df["symbol"].isna().any() or (df["symbol"] == "").any():
         raise UniverseError(f"universe file {path} has a blank symbol")
 
-    duplicates = sorted(
-        df.loc[df["symbol"].duplicated(), "symbol"].dropna().unique().tolist()
-    )
+    duplicates = sorted(df.loc[df["symbol"].duplicated(), "symbol"].dropna().unique().tolist())
     if duplicates:
         raise UniverseError(
             f"universe file {path} has duplicate symbol(s): {', '.join(duplicates)}"

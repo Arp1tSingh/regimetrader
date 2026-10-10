@@ -47,9 +47,7 @@ def small_universe(tmp_path: Path) -> Path:
 def test_columns_and_types(small_universe: Path, tmp_path: Path) -> None:
     df = load_universe(cfg_for(tmp_path, small_universe))
 
-    assert list(df.columns) == [
-        "symbol", "company_name", "sector", "industry", "instrument_type"
-    ]
+    assert list(df.columns) == ["symbol", "company_name", "sector", "industry", "instrument_type"]
     assert set(df["instrument_type"]) == {"EQUITY", "INDEX", "VOLATILITY"}
 
 
@@ -151,6 +149,7 @@ def test_blank_field_raises(tmp_path: Path) -> None:
 
 def test_mandatory_sectors_enforced_at_full_size(tmp_path: Path) -> None:
     """A 40+ row universe must contain both Banking and IT (`03` section 3)."""
+
     def rows(*sectors: str) -> list[str]:
         return [f"S{i}.NS,Co {i},{sector},Some Industry" for i, sector in enumerate(sectors)]
 

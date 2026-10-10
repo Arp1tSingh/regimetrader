@@ -93,9 +93,7 @@ def test_calendar_has_no_weekends_in_regimes(market: Any) -> None:
 
 def test_holidays_are_removed(market: Any) -> None:
     """Roughly nine weekday holidays per year are dropped from the business days."""
-    all_days = pd.bdate_range(
-        market.prices["trade_date"].min(), market.prices["trade_date"].max()
-    )
+    all_days = pd.bdate_range(market.prices["trade_date"].min(), market.prices["trade_date"].max())
     removed = len(all_days) - market.prices["trade_date"].nunique()
     years = all_days.year.nunique()
     assert 0 < removed <= years * 20

@@ -20,7 +20,7 @@ else
   SMOKE_CLEAN := rm -rf data/warehouse/smoke.db data/raw_smoke data/processed_smoke models_smoke reports_smoke logs_smoke config/frozen_config.smoke.yaml
 endif
 
-.PHONY: setup lint check test smoke etl-full features regime train backtest final-test paper dashboard clean
+.PHONY: setup lint format check test smoke etl-full features regime train backtest final-test paper dashboard clean
 
 setup:
 	$(BOOTPY) -m venv $(VENV)
@@ -28,7 +28,12 @@ setup:
 	$(PIP) install -r requirements.txt
 
 lint:
-	$(PY) -m ruff check src tests
+	$(PY) -m ruff format src tests
+	$(PY) -m ruff check src tests --fix
+
+format:
+	$(PY) -m ruff format src tests
+	$(PY) -m ruff check src tests --fix
 
 check: lint
 	$(PY) -m pytest -m "not slow" -q
