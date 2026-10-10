@@ -1,0 +1,45 @@
+# Fast end-to-end configuration on SYNTHETIC data. Used by `make smoke` and the integration tests.
+# Never touches the real warehouse, models or reports.
+extends: config/config.yaml
+
+paths:
+  db: data/warehouse/smoke.db
+  raw: data/raw_smoke
+  processed: data/processed_smoke
+  models: models_smoke
+  results: reports_smoke/results
+  figures: reports_smoke/figures
+  daily: reports_smoke/daily
+  logs: logs_smoke
+  frozen_config: config/frozen_config.smoke.yaml
+
+data:
+  source: synthetic
+  start_date: "2017-01-01"
+
+splits:
+  train_end: "2021-12-31"
+  validation_start: "2022-01-01"
+  validation_end: "2022-12-31"
+  test_start: "2023-01-01"
+
+models:
+  rf:  {n_estimators: 40, max_depth: 5, min_samples_leaf: 50, n_jobs: 1}
+  xgb: {n_estimators: 40, learning_rate: 0.05, max_depth: 3, subsample: 0.8, colsample_bytree: 0.8, n_jobs: 1}
+
+strategy:
+  slots: 5
+
+backtest:
+  random_baseline_sims: 20
+  bootstrap: {block_days: 10, resamples: 100, ci_low: 5, ci_high: 95}
+
+tuning:
+  models: [logreg, rf]
+
+olap:
+  pivot_years: [2021, 2022, 2023]
+
+synthetic:
+  n_stocks: 12
+  end_date: "2025-06-30"

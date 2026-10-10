@@ -1,0 +1,118 @@
+# RegimeTrader configuration. Single source of truth for every tunable number.
+# Code MUST read values from here (via src.common.config.load_config), never hard-code them.
+# Precedence (later wins): this file < override file named by --config or $RT_CONFIG (skipped when it is this file) < frozen config.
+# The frozen config (paths.frozen_config, resolved AFTER the override is merged) is applied last and may only set
+# strategy.selected_model, strategy.entry_base and strategy.slots (see docs/spec/07 section 3).
+# Override files may contain `extends: config/config.yaml`; they are deep-merged onto the base.
+
+project:
+  name: regimetrader
+  seed: 42
+  timezone: Asia/Kolkata
+
+paths:
+  db: data/warehouse/regimetrader.db
+  raw: data/raw
+  external: data/external
+  processed: data/processed
+  models: models
+  results: reports/results
+  figures: reports/figures
+  daily: reports/daily
+  logs: logs
+  frozen_config: config/frozen_config.yaml   # written by src.backtest.tune; applied automatically when present
+
+data:
+  source: yfinance                  # yfinance | csv | synthetic
+  start_date: "2015-01-01"
+  universe_file: config/nifty50_symbols.csv   # columns: symbol, company_name, sector, industry
+  index_symbol: "^NSEI"
+  vix_symbol: "^INDIAVIX"
+  vix_csv: data/external/india_vix.csv        # fallback; columns: date, close (open/high/low optional)
+  csv_dir: data/external/prices               # used when source: csv; one file per symbol: <symbol>.csv
+  retries: 3
+  retry_wait_seconds: [2, 5, 10]
+  incremental_overlap_days: 5
+  ffill_max_days: 2
+  anomaly_abs_return: 0.20                    # soft flag threshold for |1-day return|
+  stale_after_days: 3
+
+quality:
+  row_count_tolerance: 0.02                   # DQ-04
+  max_flagged_share: 0.005                    # DQ-05
+  max_rejected_share: 0.01                    # DQ-07
+
+splits:
+  train_end: "2022-12-31"
+  validation_start: "2023-01-01"
+  validation_end: "2023-12-31"
+  test_start: "2024-01-01"                    # test runs from here to the latest loaded date
+  embargo_days: 5
+
+features:
+  warmup_rows: 50                             # drop each stock's first N indicator rows
+  winsor_lower_pct: 1
+  winsor_upper_pct: 99
+
+regime:
+  k: 4                                        # final k after reviewing the k-selection plots; log the decision
+  k_range: [2, 3, 4, 5, 6]
+  use_vix: auto                               # auto | true | false  (auto: use if coverage >= min_vix_coverage on the training period)
+  min_vix_coverage: 0.95
+  features: [mkt_return_20d, mkt_vol_20d, india_vix, mkt_drawdown]
+  drawdown_window: 252
+  drawdown_min_periods: 20
+  smoothing: {method: trailing_mode, window: 5}   # trailing_mode | consecutive (needs `days`)
+  smoothing_consecutive_days: 3
+  refit: none                                 # none (centres frozen after training period) | yearly (stretch)
+
+target:
+  kind: absolute                              # absolute | relative (stock return minus index return)
+
+models:
+  logreg: {C: 1.0, max_iter: 1000}
+  tree:   {max_depth: 4, min_samples_leaf: 200}
+  rf:     {n_estimators: 300, max_depth: 6, min_samples_leaf: 50, n_jobs: -1}
+  xgb:    {n_estimators: 300, learning_rate: 0.03, max_depth: 3, subsample: 0.8, colsample_bytree: 0.8, n_jobs: -1}
+  aliases: {lr: logreg}
+
+strategy:
+  selected_model: null                        # set by src.backtest.tune into frozen_config
+  slots: 10
+  entry_base: 0.55                            # BULL entry; other regimes add the offsets below
+  entry_offsets: {BULL: 0.00, SIDEWAYS: 0.05, HIGH_VOL: 0.10}
+  exposure: {BULL: 1.00, SIDEWAYS: 0.60, HIGH_VOL: 0.30, BEAR: 0.00}
+  exit_prob: 0.50
+  rebalance_band: 0.25                        # trade only if |target - current| > band * target
+  stop_loss: {enabled: true, pct: 0.07, cooldown_days: 5}
+  fallback_entry_base: 0.52                   # used when too few candidates clear entry_base (see 05 section 6)
+  calibration_min_candidate_day_share: 0.50
+
+backtest:
+  initial_capital: 1000000
+  slippage: 0.0005                            # per side, adverse
+  cost: 0.0010                                # per side, all-in
+  risk_free_annual: 0.0
+  trading_days: 252
+  random_baseline_sims: 200
+  bootstrap: {block_days: 10, resamples: 1000, ci_low: 5, ci_high: 95}
+
+tuning:                                       # validation-year grid; every combination is logged as a trial
+  models: [logreg, tree, rf, xgb]
+  entry_base_grid: [0.55, 0.60]
+  slots_grid: [5, 10]
+  select_by: sharpe                           # tie-break: lower turnover
+
+paper:
+  run_id: paper_live                          # starting capital is backtest.initial_capital
+  alert_drawdown: 0.10
+  stale_banner_days: 3
+
+olap:
+  pivot_years: [2022, 2023, 2024]
+
+synthetic:                                    # used when data.source: synthetic
+  n_stocks: 12
+  end_date: "2025-06-30"
+  seed: 7
+  sectors: [Banking, IT, Energy, Auto, FMCG]

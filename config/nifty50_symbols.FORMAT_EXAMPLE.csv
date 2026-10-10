@@ -1,0 +1,8 @@
+# FORMAT EXAMPLE ONLY. NOT THE REAL UNIVERSE. Do not load or use this file.
+# The real file must be named config/nifty50_symbols.csv and contain the current 50 NSE constituents.
+# Get it from NSE (niftyindices.com, "Nifty 50" constituent list, CSV) and map to these columns (see docs/spec/03 section 3).
+# First line of the real file should be: # as of YYYY-MM-DD
+symbol,company_name,sector,industry
+RELIANCE.NS,Reliance Industries Ltd.,Energy,Oil Gas & Consumable Fuels
+HDFCBANK.NS,HDFC Bank Ltd.,Banking,Financial Services
+TCS.NS,Tata Consultancy Services Ltd.,IT,Information Technology

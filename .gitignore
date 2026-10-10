@@ -1,0 +1,30 @@
+# environments
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# data and models (large or regenerable)
+data/raw/
+data/raw_smoke/
+data/external/
+data/processed/
+data/processed_smoke/
+data/warehouse/
+*.db
+*.db-wal
+*.db-shm
+models/
+models_smoke/
+*.joblib
+
+# logs and smoke outputs
+logs/
+logs_smoke/
+reports_smoke/
+config/frozen_config.smoke.yaml
+reports/daily/
+
+# local secrets
+.env
