@@ -1,6 +1,6 @@
 {
-  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\regime\\regime_model.py --fit --k 3 --config config/config.yaml",
-  "config_hash": "22dfa4b3e6b6",
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\regime\\regime_model.py --fit --config config/config.yaml",
+  "config_hash": "5b0ac44547f4",
   "data_range": {
     "first_date_key": 20150102,
     "last_date_key": 20261009
@@ -11,7 +11,7 @@
     "sanity_failures": [],
     "use_vix": true
   },
-  "git_commit": "b9beeb91dff5062827b4d624230aaf2537b7d904",
+  "git_commit": "1890f95b76fb27a8cf5b8c06f81f39b5a993440d",
   "models_used": [],
   "package_versions": {
     "numpy": "2.5.3",
@@ -22,5 +22,5 @@
   },
   "run_id": "regime_model",
   "seed": 42,
-  "timestamp": "2026-10-10T08:18:27+00:00"
+  "timestamp": "2026-10-10T08:59:59+00:00"
 }

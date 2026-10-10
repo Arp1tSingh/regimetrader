@@ -48,7 +48,7 @@ smoke:
 	$(PY) -m src.features.builder --indicators --config $(SMOKE)
 	$(PY) -m src.olap.run --all --config $(SMOKE)
 	$(PY) -m src.regime.regime_model --fit --config $(SMOKE)
-	@REM Phase 4: $(PY) -m src.models.train --config $(SMOKE)
+	$(PY) -m src.models.train --config $(SMOKE)
 	@REM Phase 5: $(PY) -m src.backtest.tune --config $(SMOKE)
 	@REM Phase 5: $(PY) -m src.backtest.baselines --all --period validation --config $(SMOKE)
 	@REM Phase 6: $(PY) -m src.backtest.final_test --confirm --config $(SMOKE)
@@ -83,3 +83,4 @@ dashboard:
 
 clean:
 	$(CLEAN)
+

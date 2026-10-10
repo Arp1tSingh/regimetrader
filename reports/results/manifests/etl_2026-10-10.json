@@ -1,20 +1,20 @@
 {
-  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\etl\\pipeline.py --config config/config.yaml",
-  "config_hash": "22dfa4b3e6b6",
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\etl\\pipeline.py --full-refresh --config config/config.yaml",
+  "config_hash": "5b0ac44547f4",
   "data_range": {
     "first_date_key": 20150102,
     "last_date_key": 20261009
   },
   "extra": {
-    "mode": "INCREMENTAL",
-    "rows_extracted": 260,
-    "rows_loaded": 269,
-    "rows_rejected": 0,
+    "mode": "FULL",
+    "rows_extracted": 143883,
+    "rows_loaded": 143481,
+    "rows_rejected": 419,
     "source": "yfinance",
-    "start_date": "2026-10-04",
+    "start_date": "2015-01-01",
     "symbols": 52
   },
-  "git_commit": "a01462ac124e001d7007ed7a76cfe8fb3fffec5b",
+  "git_commit": "1890f95b76fb27a8cf5b8c06f81f39b5a993440d",
   "models_used": [],
   "package_versions": {
     "numpy": "2.5.3",
@@ -25,5 +25,5 @@
   },
   "run_id": "etl_2026-10-10",
   "seed": 42,
-  "timestamp": "2026-10-10T07:39:28+00:00"
+  "timestamp": "2026-10-10T08:57:42+00:00"
 }

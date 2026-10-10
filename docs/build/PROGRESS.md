@@ -6,9 +6,23 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 
 ## Current position
 
-- Phase: 3
-- Next task: T4.1 (Phase 3 complete)
-- Last gate passed: **P2** (`make check && make smoke`). 270 fast tests, 290 total.
+- Phase: 5
+- Next task: T5.4 (backtest engine)
+- Last gate passed: **P3** (`make check`, 336 fast tests). Phases 3 and 4 complete.
+
+## Log
+
+| Date | Task | Result and notes |
+|---|---|---|
+| 2026-10-10 | T4.1 | `src/features/panel.py`: **135,135 rows**, 50 symbols, 19 active features, **zero NaN**, up share 50.68%. `FEATURE_COLS_ALL` is the documented 19 names in order; `get_feature_cols(False)` gives 18 and still keeps all four regime one-hots. Single `# label-only` forward shift. |
+| 2026-10-10 | T4.1 | **Leakage verified on the real warehouse, not only in tests**: deleting every `fact_price` row after 2021-12-31 and rebuilding the panel left all **76,690** earlier rows byte-identical. |
+| 2026-10-10 | T4.2 | `src/models/preprocessing.py` and `factory.py`: `Winsorizer` limits equal the fit data's 1st/99th percentiles and never move when other data is transformed; one-hot columns are never clipped. Four pipelines, all seeded from `project.seed`. |
+| 2026-10-10 | T4.3 | `src/models/train.py`: expanding-window walk-forward with a 5-day **calendar** embargo, asserted in code (the run aborts if training reaches the cut-off). 16 `dim_model` rows, **184,976 `fact_signal` rows** written, `signal` and `target_weight` verified still 0 everywhere (DECISIONS R3). |
+| 2026-10-10 | T4.4 | `src/models/evaluate.py`: metrics always reported next to the majority baseline. |
+| 2026-10-10 | **T4.5 real run** | **Validation-year accuracy versus the majority baseline (0.5072, always-up):** tree **0.5316** (+2.44 pts) · rf 0.5125 (+0.53) · xgb 0.5059 (-0.13) · logreg 0.4980 (-0.92). Only the decision tree beats the baseline by a useful margin. This is a weak directional signal and must be reported as such, not dressed up. |
+| 2026-10-10 | T4.5 | **Incident during this phase.** A leakage check of mine backed up only rows with `date_key <= 20211231`, deleted everything after it, then "restored" from that truncated backup. The real warehouse silently lost all 2022+ prices; training failed on an empty panel. Detected immediately, then rebuilt with a full ETL refresh (143,481 prices, 140,583 indicators, 2,878 regimes). Recorded because silent data loss is the failure mode most likely to corrupt a reported result. |
+| 2026-10-10 | T4.3 | **Bug fixed**: the trainer joined predictions back to the panel on `symbol` alone, a cartesian product across every date that stock trades. Predictions now carry their trade date and join on `(date_key, symbol)`. |
+| 2026-10-10 | T5.1-T5.3 | `src/trading/rules.py`, `execution.py`, `src/backtest/metrics.py`. 17 rules tests including the runbook worked example (keeps H1-H7, drops H8 at 0.47, adds N1-N3, 10 names at 0.10) and 26 execution/metrics tests including the cost fixture (fill 1,000.50, cost 100.05, cash out 100,150.05), max drawdown -0.25, Sharpe 0.8819 and CAGR 0.0999. |
 
 ## Log
 
@@ -31,8 +45,8 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 
 **Gate P2:** `make check && make smoke`. **PASSED.**
 **Phase 3 Regimes:** [x] T3.1 [x] T3.2 [x] T3.3 [x] T3.4 [x] T3.5
-**Phase 4 Classifiers:** [ ] T4.1 [ ] T4.2 [ ] T4.3 [ ] T4.4 [ ] T4.5
-**Phase 5 Strategy and backtest:** [ ] T5.1 [ ] T5.2 [ ] T5.3 [ ] T5.4 [ ] T5.5 [ ] T5.6 [ ] T5.7 [ ] T5.8
+**Phase 4 Classifiers:** [x] T4.1 [x] T4.2 [x] T4.3 [x] T4.4 [x] T4.5
+**Phase 5 Strategy and backtest:** [x] T5.1 [x] T5.2 [x] T5.3 [ ] T5.4 [ ] T5.5 [ ] T5.6 [ ] T5.7 [ ] T5.8
 **Phase 6 Final evaluation:** [ ] T6.1 [ ] T6.2 [ ] T6.3 [ ] T6.4
 **Phase 7 Paper trading:** [ ] T7.1 [ ] T7.2 [ ] T7.3 [ ] T7.4 [ ] T7.5
 **Phase 8 Dashboard:** [ ] T8.1 [ ] T8.2
@@ -49,9 +63,9 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 | VIX used in regimes (yes or no) and coverage | |
 | Chosen k and why | |
 | Regime day counts (BULL / SIDEWAYS / HIGH_VOL / BEAR) | |
-| Selected model, `entry_base`, `slots` (from validation) | |
-| Classifier accuracy versus majority baseline (per model, validation) | |
-| Total trials logged | |
+| Selected model, `entry_base`, `slots` (from validation) | pending T5.6 |
+| Classifier accuracy versus majority baseline (per model, validation) | **tree 0.5316** · rf 0.5125 · xgb 0.5059 · logreg 0.4980; majority baseline **0.5072** |
+| Total trials logged | 5 regime_k + 4 model_year = 9 so far |
 | Test period evaluated? (date, lock file) | |
 | Headline test results (strategy vs B1) | |
 
