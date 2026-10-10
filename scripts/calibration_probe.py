@@ -8,6 +8,7 @@ If it falls below `strategy.calibration_min_candidate_day_share`, that model's
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from src.common.config import load_config
 from src.common.db import get_engine, read_sql
@@ -59,14 +60,51 @@ def main() -> int:
         flag = "FALLBACK" if triggered else "ok"
         print(f"  {model:7} candidate_day_share = {share:.4f}  {flag}")
 
+    models_list = sorted(df["model_name"].unique())
+
+    def _share(engine: Any, cfg: Any, model: str, entry: float, need: int) -> tuple[float, int]:
+        subset = df[df["model_name"] == model]
+        if subset.empty:
+            return float("nan"), 0
+        per_day = (
+            subset.assign(ok=subset["prob_up"] >= entry).groupby("date_key")["ok"].sum()
+        )
+        return float((per_day >= need).mean()), int(len(per_day))
+
     print()
-    print(f"base grid        : {base_grid} trials")
+    print("candidate_day_share at the fallback threshold "
+          f"{cfg['strategy']['fallback_entry_base']} (same definition, fallback entry):")
+    fallback_entry = float(cfg["strategy"]["fallback_entry_base"])
+    still_zero = []
+    for model in models_list:
+        share, _days = _share(engine, cfg, model, fallback_entry, need)
+        near_zero = share < 0.10
+        if near_zero:
+            still_zero.append(model)
+        flag = "NEAR ZERO - STOP" if near_zero else "usable"
+        print(f"  {model:7} share@0.52 = {share:.4f}  {flag}")
+    print()
+    if still_zero:
+        print(f"STOP: still near zero at 0.52 for {', '.join(still_zero)}.")
+        print("The fallback is not doing its job. A percentile threshold on validation")
+        print("prob_up (e.g. the 80th) is the documented alternative; it changes the")
+        print("grid, so record it in DECISIONS.md BEFORE running and recount.")
+        return 1
+
+    print("All models reach 0.52 on a meaningful share of days: the fallback is working.")
+    print()
+    print(f"base grid          : {base_grid} trials")
     if fallback:
-        print(f"fallback for     : {', '.join(fallback)}")
-        print(f"TOTAL TRIALS     : {base_grid + len(fallback)}")
+        # The fallback adds an entry base to each affected model, and every entry
+        # base crosses every slot count: models x (entries+1) x slots.
+        per_model = (len(entries) + 1) * len(slots)
+        total = len(models) * per_model
+        print(f"fallback for       : {', '.join(fallback)}")
+        print(f"per model w/ fb    : {len(entries) + 1} entry bases x {len(slots)} slots = {per_model}")
+        print(f"TOTAL TRIALS       : {total}")
         print("-> the trial count changes; the human must approve before tuning")
     else:
-        print(f"TOTAL TRIALS     : {base_grid}")
+        print(f"TOTAL TRIALS       : {base_grid}")
     return 0
 
 

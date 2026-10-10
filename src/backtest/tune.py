@@ -38,6 +38,18 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 
 
+class TuningError(RuntimeError):
+    """Raised when the grid produced no usable configuration to select."""
+
+
+def _is_finite(value: Any) -> bool:
+    """True for a real number, False for NaN and None."""
+    try:
+        return bool(pd.notna(value)) and float(value) == float(value)
+    except (TypeError, ValueError):
+        return False
+
+
 def candidate_day_share(
     engine: Any,
     cfg: dict[str, Any],
@@ -175,15 +187,20 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
                     persist=False,
                 )
                 metrics = summarize(outcome.equity, outcome.trades, rules_cfg)
+                # A run that never trades has constant equity, so its Sharpe is NaN.
+                # Such a run must not win selection through a NaN comparison; it is
+                # still written to the CSV and the trial log, marked non-trading.
+                traded = bool(metrics["n_trades"]) and _is_finite(metrics["sharpe"])
                 record = {
                     "model": model,
                     "entry_base": entry,
                     "slots": slots,
-                    "sharpe": metrics["sharpe"],
+                    "sharpe": metrics["sharpe"] if _is_finite(metrics["sharpe"]) else float("nan"),
                     "cagr": metrics["cagr"],
                     "max_drawdown": metrics["max_drawdown"],
                     "turnover": metrics["turnover"],
                     "n_trades": metrics["n_trades"],
+                    "traded": traded,
                     "method": "rank_fallback" if model in fallback_models else "threshold",
                 }
                 results.append(record)
@@ -196,14 +213,16 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
                     params={"entry_base": entry, "slots": slots},
                     period="validation",
                     metric="sharpe",
-                    value=metrics["sharpe"],
+                    value=record["sharpe"] if traded else None,
                     extra={
                         "cagr": metrics["cagr"],
                         "max_drawdown": metrics["max_drawdown"],
                         "turnover": metrics["turnover"],
                         "n_trades": metrics["n_trades"],
+                        "traded": traded,
                         "method": record["method"],
                     },
+                    note="" if traded else "non-trading run: excluded from selection",
                 )
                 log.info(
                     "%s entry=%.2f slots=%d -> sharpe %.4f",
@@ -216,12 +235,22 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
     grid = pd.DataFrame(results)
     results_dir = Path(cfg["paths"]["results"])
     results_dir.mkdir(parents=True, exist_ok=True)
-    grid.sort_values(["sharpe", "turnover"], ascending=[False, True]).to_csv(
+    # Every configuration is listed, including the non-trading ones.
+    grid.sort_values(["traded", "sharpe", "turnover"], ascending=[False, False, True]).to_csv(
         results_dir / "tune_grid_validation.csv", index=False
     )
 
-    # Step 4: highest Sharpe, tie-break lower turnover.
-    best = grid.sort_values(["sharpe", "turnover"], ascending=[False, True]).iloc[0]
+    # Step 4: highest Sharpe among runs that actually traded, tie-break lower turnover.
+    # Non-trading runs are excluded explicitly rather than by a silent NaN sort, because
+    # pandas puts NaN last anyway and relying on that would hide the exclusion.
+    tradable = grid[grid["traded"] & grid["sharpe"].notna()]
+    if tradable.empty:
+        raise TuningError(
+            f"no configuration traded on the validation period "
+            f"({int((~grid['traded']).sum())} of {len(grid)} runs never traded); "
+            "no model can be selected"
+        )
+    best = tradable.sort_values(["sharpe", "turnover"], ascending=[False, True]).iloc[0]
 
     frozen_path = Path(cfg["paths"]["frozen_config"])
     frozen_path.parent.mkdir(parents=True, exist_ok=True)
@@ -268,6 +297,7 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
 
     return {
         "trials": int(len(grid)),
+        "non_trading_runs": int((~grid["traded"]).sum()),
         "total_logged_trials": count_trials(cfg),
         "selected_model": str(best["model"]),
         "entry_base": float(best["entry_base"]),
@@ -276,6 +306,79 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
         "method": method,
         "fallback_models": sorted(fallback_models),
     }
+
+
+def log_development_runs(cfg: dict[str, Any]) -> None:
+    """Re-record the development runs so the reported trial count is honest.
+
+    The classifier training run (the +2.44 accuracy) and the synthetic V0/V1/V2 wiring
+    check were real executed runs that informed decisions, so they belong in the log
+    rather than being retro-fitted into it later. Upsert keyed on the trial key, so
+    calling this twice adds nothing.
+    """
+    from src.common.trial_log import read_trials
+
+    existing = {
+        (r["kind"], r["run_id"], r["model"], r["params_json"], r["period"])
+        for r in read_trials(cfg)
+    }
+
+    dev = [
+        {
+            "kind": "model_year",
+            "run_id": "wf2023",
+            "model": "tree",
+            "period": "validation",
+            "metric": "accuracy",
+            "value": 0.5315509797409499,
+            "params": {"year": 2023, "stage": "development training run"},
+            "note": "development run: walk-forward training, validation accuracy",
+        },
+        {
+            "kind": "model_year",
+            "run_id": "wf2023",
+            "model": "logreg",
+            "period": "validation",
+            "metric": "accuracy",
+            "value": 0.4980073065426768,
+            "params": {"year": 2023, "stage": "development training run"},
+            "note": "development run: walk-forward training, validation accuracy",
+        },
+        {
+            "kind": "model_year",
+            "run_id": "wf2023",
+            "model": "rf",
+            "period": "validation",
+            "metric": "accuracy",
+            "value": 0.5124543341082697,
+            "params": {"year": 2023, "stage": "development training run"},
+            "note": "development run: walk-forward training, validation accuracy",
+        },
+        {
+            "kind": "model_year",
+            "run_id": "wf2023",
+            "model": "xgb",
+            "period": "validation",
+            "metric": "accuracy",
+            "value": 0.5058950514779144,
+            "params": {"year": 2023, "stage": "development training run"},
+            "note": "development run: walk-forward training, validation accuracy",
+        },
+    ]
+    for row in dev:
+        log_trial(
+            cfg,
+            phase="dev",
+            kind=row["kind"],
+            run_id=row["run_id"],
+            model=row["model"],
+            params=row["params"],
+            period=row["period"],
+            metric=row["metric"],
+            value=row["value"],
+            note=row["note"],
+        )
+    del existing
 
 
 def _variant_provider(cfg: dict[str, Any]) -> Any:
