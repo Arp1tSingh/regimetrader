@@ -90,9 +90,12 @@ def _validate(df: pd.DataFrame, path: Path) -> None:
         df.loc[df["symbol"].duplicated(), "symbol"].dropna().unique().tolist()
     )
     if duplicates:
-        raise UniverseError(f"universe file {path} has duplicate symbol(s): {', '.join(duplicates)}")
+        raise UniverseError(
+            f"universe file {path} has duplicate symbol(s): {', '.join(duplicates)}"
+        )
 
-    if df[["company_name", "sector", "industry"]].isna().any().any():
+    required_text = ["company_name", "sector", "industry"]
+    if df[required_text].isna().any().any():
         raise UniverseError(f"universe file {path} has blank company_name, sector or industry")
 
     if len(df) >= FULL_UNIVERSE_ROWS:
