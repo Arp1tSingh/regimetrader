@@ -6,11 +6,13 @@ errors, and the roll-up (02) to equal a hand aggregation of query 01's inputs.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import pytest
+import yaml
 from sqlalchemy import Engine
 
 from src.features.indicators import build_indicators
@@ -220,28 +222,66 @@ def test_csv_written_for_every_query(loaded: tuple, tmp_path: Path) -> None:
 # --------------------------------------------------------------- CLI
 
 
-def test_cli_all(loaded: tuple) -> None:
+def _tmp_config_file(cfg: dict, tmp_path: Path) -> str:
+    """Write the tmp-redirected config to disk so the CLI can be given a path.
+
+    The CLI takes a config *path*, not a config object, so the fixture's already
+    redirected config has to be serialised before it can be handed to `main`.
+    """
+    path = Path(tmp_path) / "olap_cli_config.yaml"
+    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    return str(path)
+
+
+def test_the_cli_tests_do_not_depend_on_the_untracked_smoke_warehouse() -> None:
+    """Regression for a clean-clone failure found by the T10.2 check.
+
+    These CLI tests used to pass `config/config.smoke.yaml`, whose `db` points at
+    `data/warehouse/smoke.db`. That file is gitignored and only exists after
+    `make smoke` has run, so on a fresh clone all three CLI tests failed with
+    `9 failure(s)` / exit 1: the tables did not exist.
+
+    They passed in the working directory purely because repeated smoke runs left
+    a 16 MB database behind. A test that passes only because of untracked local
+    state is not a test, so this asserts the source no longer points the CLI at
+    the real smoke config.
+    """
+    source = Path(__file__).read_text(encoding="utf-8")
+    body = source[
+        source.index("# --------------------------------------------------------------- CLI") :
+    ]
+    # Match the call pattern, not the bare name, so this test's own prose about
+    # SMOKE_CONFIG_PATH cannot trip it.
+    offenders = re.findall(r'"--config",\s*SMOKE_CONFIG_PATH', body)
+    assert not offenders, (
+        f"an OLAP CLI call is still pointed at the untracked data/warehouse/smoke.db: {offenders}"
+    )
+
+
+def test_cli_all(loaded: tuple, tmp_path: Path) -> None:
     engine, cfg = loaded
     from src.olap.run import EXIT_OK
 
-    assert main(["--all", "--config", SMOKE_CONFIG_PATH]) == EXIT_OK
+    assert main(["--all", "--config", _tmp_config_file(cfg, tmp_path)]) == EXIT_OK
 
 
-def test_cli_single_query(loaded: tuple) -> None:
+def test_cli_single_query(loaded: tuple, tmp_path: Path) -> None:
     engine, cfg = loaded
     from src.olap.run import EXIT_OK
 
-    assert main(["--query", "01_", "--config", SMOKE_CONFIG_PATH]) == EXIT_OK
+    code = main(["--query", "01_", "--config", _tmp_config_file(cfg, tmp_path)])
+    assert code == EXIT_OK
 
 
-def test_cli_unknown_query_fails(loaded: tuple) -> None:
+def test_cli_unknown_query_fails(loaded: tuple, tmp_path: Path) -> None:
     engine, cfg = loaded
     from src.olap.run import EXIT_DATA_FAILURE
 
-    assert main(["--query", "99_", "--config", SMOKE_CONFIG_PATH]) == EXIT_DATA_FAILURE
+    code = main(["--query", "99_", "--config", _tmp_config_file(cfg, tmp_path)])
+    assert code == EXIT_DATA_FAILURE
 
 
-def test_cli_param_override(loaded: tuple) -> None:
+def test_cli_param_override(loaded: tuple, tmp_path: Path) -> None:
     engine, cfg = loaded
     from src.olap.run import EXIT_OK
 
@@ -254,7 +294,7 @@ def test_cli_param_override(loaded: tuple) -> None:
             "--param",
             "year=2023",
             "--config",
-            SMOKE_CONFIG_PATH,
+            _tmp_config_file(cfg, tmp_path),
         ]
     )
     assert code == EXIT_OK

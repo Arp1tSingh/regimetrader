@@ -176,6 +176,20 @@ Two things follow, and they must not be conflated.
 
 *Honest note:* the six files were re-formatted, which is a cosmetic change only. `tests/test_models.py`, `tests/test_diagnostics.py` and `tests/test_tune.py` (69 tests) were re-run afterwards and pass. No logic, threshold, seed or metric was altered, and no result changes.
 
+**R52. Three OLAP CLI tests passed only because untracked local state existed.** *2026-10-11.* Found by the second T10.2 clean-clone check, immediately after R51 was fixed. On a fresh clone `make check` reported **3 failed, 470 passed**: `tests/test_olap.py::test_cli_all`, `::test_cli_single_query` and `::test_cli_param_override` each asserted `assert 1 == 0` — the CLI's exit code, not a test value.
+
+*Root cause:* all three requested the `loaded` fixture, which builds a synthetic warehouse under `tmp_path`, and then **ignored it**, passing `config/config.smoke.yaml` to `main()` instead. That config's `db` is `data/warehouse/smoke.db`, a **gitignored** file that exists only after `make smoke` has run. Reproduced directly: running `python -m src.olap.run --all` against a config with no warehouse gives `ran 9 quer(y/ies), 9 failure(s)` and exit 1, because the tables do not exist.
+
+*Why it passed locally:* repeated `make smoke` runs across Phases 1–7 had left a **16 MB** `data/warehouse/smoke.db` in the working directory. The tests were green on that untracked artefact, and green for the same reason `src/models/` went missing in R51: the working directory had state the repository does not.
+
+*Fix:* the three tests now serialise the `loaded` fixture's already-redirected config to a YAML file in `tmp_path` and pass that. `test_cli_unknown_query_fails` was fixed the same way. All 21 OLAP tests pass, and the CLI is now exercised against a warehouse the test itself built.
+
+*Guard:* `test_the_cli_tests_do_not_depend_on_the_untracked_smoke_warehouse` greps the CLI section for the `"--config", SMOKE_CONFIG_PATH` call pattern — deliberately the *pattern* and not the bare name, because the first version of this test asserted the name was absent and therefore failed on its own docstring.
+
+*Scope checked:* `test_pipeline.py`, `test_regime.py`, `test_models.py` and `test_config.py` also reference `config.smoke.yaml`, but only to read and modify the YAML or to assert a failure path; they never point the CLI at the untracked database. They passed on the clean clone and needed no change.
+
+*Why this is recorded alongside R51:* two independent, unrelated mechanisms — an over-broad ignore rule (R51) and a test reading untracked state (R52) — produced the same symptom, a suite that is green locally and broken on a clone. Neither is detectable from inside the working directory. That is now the single most load-bearing lesson in this project.
+
 ---
 
 ## 3. Open questions (agent: do not block on these; use the stated default)
