@@ -71,6 +71,41 @@ This is **not** because cash inflates Sharpe — Sharpe is a ratio and exposure 
 
 > **The strategy trails buy-and-hold on return (4.6% against 19.5%) and on Sharpe against two of the three baselines. Drawdown looks better than buy-and-hold, but on one trade.**
 
+## 2026-10-11 — Pre-flight record for the one-time test evaluation
+
+Recorded **before** the single authorised test-period run, so the freeze can be shown
+to have predated the numbers.
+
+| item | value |
+|---|---|
+| git commit at freeze | `2d1645133a74c291ae6dfab071152067a8b9d7c2` (Phase 5 complete) |
+| `config/frozen_config.yaml` SHA-256 | `0b8c88c64abf97a146cd242877fc48076d5dc1c7b12469fbe248ec8a0c0c63b8` |
+| `config/config.yaml` SHA-256 | `d9aecdab785097e9798b669186879a32083aa24748cca0b82136d8501db7e53f` |
+| `data/warehouse/regimetrader.db` SHA-256 | `8c74ac8baa2101b5fabd3df35714382949eb167a6cce7d6c3aff76e4af7d5e50` |
+| warehouse backup | `C:\Users\Admin\AppData\Local\Temp\opencode\regimetrader_pre_final_test.db`, **verified byte-identical** to the source |
+| frozen strategy | `rf`, `entry_base` 0.504415, `slots` 10, `method: activity_and_null_filtered` |
+| counted trials before the test run | **331** |
+
+Pre-flight checks, all passing: git tree clean; `config/frozen_config.yaml` tracked and
+unmodified against HEAD; `fact_trade` and `fact_portfolio_daily` empty;
+`SUM(fact_signal.signal) = 0` and `SUM(target_weight) = 0.0` (R3); no
+`TEST_RUN_LOCK.json` anywhere; warehouse hash unchanged since the backup.
+
+`src/backtest/final_test.py` and its 13 guard tests were committed at `082b9e6` **before**
+the run. The guards cover the lock file's required fields, refusal of a second run
+without `--allow-rerun`, the reason/count increment and `test_run_log.jsonl`, refusal
+without a frozen config / without `strategy.selected_model` / without `--confirm`, exit
+code 3 on a completed run, and an `ast`-based check that no module outside
+`final_test.py` passes `allow_test_period=True`. One test runs the whole module end to
+end on synthetic data. **435 fast tests pass.**
+
+**Two defects found in my own guard tests before the run, both fixed:** they loaded the
+shipped `config/config.smoke.yaml`, whose paths point into the real repository, and
+wrote a `TEST_RUN_LOCK.json` into `reports_smoke/results/`. That file was deleted and
+the tests now redirect every output path under `tmp_path`. The `allow_test_period`
+check also first used a text search and flagged `engine.py` for its own docstring; it
+now parses with `ast` so it tests code rather than prose.
+
 ## 2026-10-11 — B4 null audit (`DECISIONS` R44): caveat, no bug, freeze unchanged
 
 Read-only diagnostic on the frozen configuration (rf / 0.504415 / 10), validation year only. Recomputation of all 100 null simulations **matched `trial_log.csv` to 2.2e-16**, and the counted trials are unchanged at **331**, so the null is exactly reproducible and nothing drifted.
