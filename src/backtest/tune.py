@@ -134,8 +134,7 @@ def _null_percentile(
             # (kind, run_id, model, params_json, period), so without it every
             # simulation of a configuration collapses into a single row.
             run_id=(
-                f"null_{row['model']}_{row['entry_base']:.4f}_{int(row['slots'])}"
-                f"_sim{sim_index}"
+                f"null_{row['model']}_{row['entry_base']:.4f}_{int(row['slots'])}_sim{sim_index}"
             ),
             model=str(row["model"]),
             params={
@@ -202,8 +201,10 @@ def _no_edge_default(
     scores = roc_auc_by_model(cfg) if aucs is None else aucs
     names = [p["model"] for p in eligible]
     finite = {m: float(scores[m]) for m in names if m in scores and _is_finite(scores[m])}
-    chosen = max(sorted(finite), key=lambda m: finite[m]) if finite else (
-        names[0] if names else cfg["tuning"]["models"][0]
+    chosen = (
+        max(sorted(finite), key=lambda m: finite[m])
+        if finite
+        else (names[0] if names else cfg["tuning"]["models"][0])
     )
     return (
         pd.Series(

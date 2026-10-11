@@ -101,9 +101,10 @@ def b4_distribution(
     from sqlalchemy import text
 
     from src.backtest.engine import run_backtest
-    from src.backtest.metrics import summarize
+    from src.backtest.metrics import summarize, weight_exposure
     from src.backtest.strategies import make_weights_fn
     from src.common.db import execute_many, read_sql
+    from src.features.panel import TARGET_COL, build_panel
 
     count = int(sims if sims is not None else cfg["backtest"]["random_baseline_sims"])
     seed = int(cfg["project"]["seed"])
@@ -195,6 +196,7 @@ def b4_distribution(
                     "n_trades": metrics["n_trades"],
                     "turnover": metrics["turnover"],
                     "exposure": metrics["exposure"],
+                    "weight_exposure": weight_exposure(outcome.equity),
                     "tie_break_share": outcome.tie_break_share,
                     "traded": bool(metrics["n_trades"]),
                 }

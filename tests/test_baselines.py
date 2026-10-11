@@ -451,6 +451,51 @@ def test_baseline_engine_settings_match_the_spec() -> None:
     assert BASELINE_SETTINGS["B3"]["stop_loss_enabled"] is False
 
 
+def test_weight_exposure_distinguishes_size_from_time() -> None:
+    """`exposure` counts days with any position; `weight_exposure` counts capital.
+
+    A book fully invested half the time and flat the other half has `exposure` 0.5 and
+    `weight_exposure` 0.5, but a book running at 30% of capital every day has
+    `exposure` 1.0 and `weight_exposure` 0.30. B4 nulls and the real run both hold a
+    position nearly every day, so only the size-weighted measure separates them.
+    """
+    from src.backtest.metrics import exposure, weight_exposure
+
+    half_flat = pd.DataFrame({"equity": [100.0, 100.0], "positions_value": [100.0, 0.0]})
+    assert exposure(half_flat) == pytest.approx(0.5)
+    assert weight_exposure(half_flat) == pytest.approx(0.5)
+
+    always_full = pd.DataFrame({"equity": [100.0, 100.0], "positions_value": [100.0, 100.0]})
+    assert exposure(always_full) == pytest.approx(1.0)
+    assert weight_exposure(always_full) == pytest.approx(1.0)
+
+    regime_scaled = pd.DataFrame({"equity": [100.0, 100.0], "positions_value": [30.0, 30.0]})
+    assert exposure(regime_scaled) == pytest.approx(1.0)
+    assert weight_exposure(regime_scaled) == pytest.approx(0.30)
+
+
+@pytest.mark.slow
+def test_weight_exposure_of_a_real_run_is_finite(signals_ready: tuple) -> None:
+    from src.backtest.engine import run_backtest
+    from src.backtest.metrics import weight_exposure
+    from src.backtest.strategies import make_weights_fn as build
+
+    cfg_obj, engine = signals_ready
+    cfg_obj = {**cfg_obj, "splits": {**cfg_obj["splits"], "test_start": "2030-01-01"}}
+    result = run_backtest(
+        cfg_obj,
+        build("V2", cfg_obj),
+        str(cfg_obj["splits"]["validation_start"]),
+        str(cfg_obj["splits"]["validation_end"]),
+        "we_probe",
+        engine=engine,
+        model_name="tree",
+        persist=False,
+    )
+    assert np.isfinite(weight_exposure(result.equity))
+    assert 0.0 <= weight_exposure(result.equity) <= 1.0
+
+
 # --------------------------------------------------------------- equity index
 
 

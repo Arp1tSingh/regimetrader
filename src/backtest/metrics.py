@@ -144,6 +144,26 @@ def exposure(equity: pd.DataFrame) -> float:
     return float((equity["positions_value"] > 0).mean())
 
 
+def weight_exposure(equity: pd.DataFrame) -> float:
+    """Mean share of capital actually invested, as a decimal.
+
+    `exposure` counts days with any position and is 1.0 for a book that is fully
+    invested half the time and flat the other half. This weights by size, so a
+    strategy that cuts to 30% in HIGH_VOL and goes to cash in BEAR is correctly
+    reported as less than fully invested. Needed to tell B4 nulls apart from the
+    real run: both hold a position nearly every day, but at different sizes.
+    """
+    if equity is None or equity.empty or "equity" not in equity.columns:
+        return float("nan")
+    capital = equity["equity"].astype(float)
+    if "positions_value" not in equity.columns:
+        return float("nan")
+    usable = capital > 0
+    if not usable.any():
+        return float("nan")
+    return float((equity["positions_value"][usable] / capital[usable]).mean())
+
+
 def block_bootstrap_sharpe(
     returns: pd.Series,
     *,

@@ -1,20 +1,22 @@
 """Read-only diagnostic: the full B4 null distribution for the frozen configuration.
 
-Recomputes the null for rf / entry_base 0.504415 / slots 10 so that exposure, trade
-count and CAGR can be reported alongside Sharpe. Those columns were never persisted
-per simulation, and `b4_sharpe_distribution_validation.csv` was overwritten by a
-timing run, so they have to be recomputed.
+Recomputes the null for rf / entry_base 0.504415 / slots 10 so exposure, trade count
+and CAGR can be reported alongside Sharpe. Those columns were never persisted per
+simulation, and `b4_sharpe_distribution_validation.csv` was overwritten by a timing
+run, so they have to be recomputed.
 
 This logs **no** trials and writes no frozen config: it calls `b4_distribution`
 directly rather than `tune`, so the trial log and the freeze are untouched. The
 permutation is seeded per simulation, so the recomputed Sharpes must match the ones
-already in `trial_log.csv` exactly; that equality is asserted and printed, and it is
-what makes this a diagnostic rather than a re-run.
+already in `trial_log.csv` exactly; that equality is checked by parsing the simulation
+index out of `run_id` and is what makes this a diagnostic rather than a re-run.
 
-Writes `reports/results/null_diagnostic_frozen.csv`.
+Writes `null_diagnostic_frozen.csv` and `null_diagnostic_frozen_summary.csv`.
 """
 
 from __future__ import annotations
+
+import re
 
 import numpy as np
 import pandas as pd
@@ -22,6 +24,8 @@ import pandas as pd
 from src.backtest.baselines import b4_distribution
 from src.common.config import load_config
 from src.common.db import get_engine
+
+SIM = re.compile(r"_sim(\d+)$")
 
 
 def spread(values: pd.Series) -> dict[str, float]:
@@ -36,65 +40,134 @@ def spread(values: pd.Series) -> dict[str, float]:
     }
 
 
+def reference_runs(cfg, engine, model: str, entry: float, slots: int) -> pd.DataFrame:
+    """The real run and the three baselines, on the same period and settings."""
+    from src.backtest.engine import run_backtest
+    from src.backtest.metrics import summarize, weight_exposure
+    from src.backtest.strategies import make_weights_fn as build
+
+    rows = []
+    labels = [
+        ("V2 real (frozen)", "V2", model, 1.0),
+        ("B1 index buy-and-hold", "B1", None, None),
+        ("B2 equal weight", "B2", None, None),
+        ("B3 trend sma20>sma50", "B3", None, None),
+    ]
+    for label, provider_name, mdl, _ in labels:
+        provider = build(provider_name, cfg)
+        kwargs = (
+            {"fractional_shares": True, "band": 0.0, "stop_loss_enabled": False}
+            if provider_name == "B1"
+            else (
+                {"band": 0.0, "stop_loss_enabled": False}
+                if provider_name == "B2"
+                else ({"stop_loss_enabled": False} if provider_name == "B3" else {})
+            )
+        )
+        outcome = run_backtest(
+            cfg,
+            provider,
+            "2023-01-01",
+            "2023-12-31",
+            f"null_diag_{provider_name}",
+            engine=engine,
+            model_name=mdl,
+            persist=False,
+            **kwargs,
+        )
+        m = summarize(outcome.equity, outcome.trades, cfg)
+        rows.append(
+            {
+                "run": label,
+                "sharpe": m["sharpe"],
+                "cagr": m["cagr"],
+                "n_trades": m["n_trades"],
+                "days_in_position": m["exposure"],
+                "weight_exposure": weight_exposure(outcome.equity),
+            }
+        )
+    del entry, slots
+    return pd.DataFrame(rows)
+
+
 def main() -> int:
     cfg = load_config("config/config.yaml")
     engine = get_engine(cfg)
 
-    frozen = cfg["strategy"]
-    model = str(frozen["selected_model"])
-    entry = float(frozen["entry_base"])
-    slots = int(frozen["slots"])
+    model = str(cfg["strategy"]["selected_model"])
+    entry = float(cfg["strategy"]["entry_base"])
+    slots = int(cfg["strategy"]["slots"])
     sims = 100
     seed = int(cfg["project"]["seed"])
 
-    print(f"recomputing null for the frozen configuration: {model}/{entry:.6f}/{slots}")
-    print(f"{sims} simulations, seed {seed} (permutation seed = project.seed + sim)\n")
+    print(f"frozen configuration: {model} / entry_base {entry:.6f} / slots {slots}")
+    print(f"{sims} simulations, permutation seed = project.seed({seed}) + sim\n")
+
+    print("computing reference runs (real V2 and the three baselines)...")
+    references = reference_runs(cfg, engine, model, entry, slots)
+    print(references.to_string(index=False))
+    print()
 
     distribution = b4_distribution(cfg, engine, "2023-01-01", "2023-12-31", sims=sims, model=model)
 
-    # Determinism check against what is already logged.
+    # Determinism check: match logged rows to simulations by the parsed index, NOT by
+    # a lexicographic sort of run_id, which puts sim10 before sim2.
     trials = pd.read_csv(f"{cfg['paths']['results']}/trial_log.csv")
+    prefix = f"null_{model}_{entry:.4f}_{slots}_sim"
     logged = trials[
-        (trials["metric"] == "null_sharpe")
-        & trials["run_id"].astype(str).str.startswith(f"null_{model}_{entry:.4f}_{slots}_sim")
-    ].sort_values("run_id")
-    recomputed = distribution["sharpe"].reset_index(drop=True)
-    match = ""
-    if len(logged) == len(recomputed):
-        logged_sorted = logged["value"].reset_index(drop=True).sort_index()
-        delta = float(np.nanmax(np.abs(logged_sorted.to_numpy() - recomputed.to_numpy())))
-        match = f" (max |difference| vs trial_log = {delta:.3e})"
+        (trials["metric"] == "null_sharpe") & trials["run_id"].astype(str).str.startswith(prefix)
+    ].copy()
+    match = "no logged rows to compare"
+    if not logged.empty:
+        logged["sim"] = logged["run_id"].astype(str).str.extract(SIM).astype(int)
+        logged = logged.set_index("sim").loc[distribution.index]
+        delta = float(
+            np.nanmax(np.abs(logged["value"].to_numpy() - distribution["sharpe"].to_numpy()))
+        )
+        match = f"max |recomputed - trial_log| = {delta:.3e}"
         if delta > 1e-9:
-            match += "  MISMATCH"
+            match += "   MISMATCH"
 
     rows = []
-    for column in ("sharpe", "exposure", "n_trades", "cagr", "turnover", "max_drawdown"):
-        stats = spread(distribution[column])
-        rows.append({"metric": column, **stats})
-
+    for column in (
+        "sharpe",
+        "weight_exposure",
+        "exposure",
+        "n_trades",
+        "cagr",
+        "turnover",
+        "max_drawdown",
+    ):
+        rows.append({"metric": column, **spread(distribution[column])})
     frame = pd.DataFrame(rows)
-    print("B4 null distribution across", len(distribution), "simulations:", match)
+
+    print(f"B4 null distribution over {len(distribution)} simulations: {match}")
     print()
-    print(f"{'metric':14}{'p10':>12}{'p50':>12}{'p90':>12}")
-    print("-" * 50)
+    header = f"{'metric':16}{'p10':>12}{'p50':>12}{'p90':>12}"
+    print(header)
+    print("-" * 52)
     for _, row in frame.iterrows():
-        print(f"{row['metric']:14}{row['p10']:12.4f}{row['p50']:12.4f}{row['p90']:12.4f}")
+        print(f"{row['metric']:16}{row['p10']:12.4f}{row['p50']:12.4f}{row['p90']:12.4f}")
 
     print()
-    zero_trade = int((distribution["n_trades"] == 0).sum())
-    one_trade = int((distribution["n_trades"] == 1).sum())
-    print(f"simulations with 0 trades: {zero_trade} / {len(distribution)}")
-    print(f"simulations with 1 trade : {one_trade} / {len(distribution)}")
+    print(
+        f"simulations with 0 trades: {int((distribution['n_trades'] == 0).sum())} / "
+        f"{len(distribution)}"
+    )
+    print(
+        f"simulations with 1 trade : {int((distribution['n_trades'] == 1).sum())} / "
+        f"{len(distribution)}"
+    )
 
-    out = f"{cfg['paths']['results']}/null_diagnostic_frozen.csv"
-    distribution.to_csv(out, index=False)
-    frame.to_csv(f"{cfg['paths']['results']}/null_diagnostic_frozen_summary.csv", index=False)
-    print(f"\nwrote {out}")
+    results = cfg["paths"]["results"]
+    distribution.to_csv(f"{results}/null_diagnostic_frozen.csv", index=False)
+    frame.to_csv(f"{results}/null_diagnostic_frozen_summary.csv", index=False)
+    references.to_csv(f"{results}/null_diagnostic_reference.csv", index=False)
+    print(f"\nwrote {results}/null_diagnostic_frozen.csv and _reference.csv")
 
-    # Nothing was logged: confirm the trial count is unchanged.
     from src.backtest.tune import count_trials
 
-    print(f"counted trials (must be unchanged at 331): {count_trials(cfg)}")
+    print(f"counted trials (must still be 331): {count_trials(cfg)}")
     return 0
 
 
