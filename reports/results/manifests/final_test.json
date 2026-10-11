@@ -1,0 +1,35 @@
+{
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\backtest\\final_test.py --config config/config.yaml --confirm --allow-rerun b4_distribution called run_backtest without allow_test_period=True; crash fix to complete B4 and the trial-log/manifest entries.",
+  "config_hash": "dace7f38d514",
+  "data_range": {
+    "first_date_key": 20150102,
+    "last_date_key": 20261009
+  },
+  "extra": {
+    "end": "2026-10-09",
+    "period": "test",
+    "run_count": 2,
+    "runs": [
+      "backtest_main",
+      "test_V0",
+      "test_V1",
+      "test_V2_nocost",
+      "test_B1",
+      "test_B2",
+      "test_B3"
+    ],
+    "start": "2024-01-01"
+  },
+  "git_commit": "afefc4b2e5d12272055b4fc4cfa27d6c90b1349b",
+  "models_used": [],
+  "package_versions": {
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "python": "3.14.8",
+    "scikit-learn": "1.9.1",
+    "xgboost": "3.4.1"
+  },
+  "run_id": "final_test",
+  "seed": 42,
+  "timestamp": "2026-10-11T08:23:15+00:00"
+}

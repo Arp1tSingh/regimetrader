@@ -146,6 +146,8 @@ Two things follow, and they must not be conflated.
 
 *Rule unchanged and the frozen config left as is.* The filter is applied exactly as R40 states. Correcting B4 now, after seeing these numbers, would be precisely the post-hoc adjustment this file exists to prevent; the asymmetry is disclosed instead. *Why `weight_exposure` was added:* `exposure` counts days with any position and cannot distinguish a book running at 30% of capital from one running at 100%, so it could not have surfaced this.
 
+**R45. The test evaluation crashed once and completed under `run_count` 2.** *2026-10-11.* The first `final_test.py` invocation wrote the lock with `run_count: 1`, scored the strategy, the ablations, the baselines and the four classifiers, then **crashed** in the B4 step: `b4_distribution` called `run_backtest` without `allow_test_period=True`, so the guard fired and raised `ValueError`. It was an implementation bug, not a data problem, and the crash did **not** re-decide the strategy against a fresh look at the numbers. The failure was reported and the rerun held until the human authorised exactly one, with the reason recorded in `test_run_log.jsonl`. The fix was a single keyword parameter defaulting to `False` so only `final_test.py` can lift it — no config, threshold, model, seed or metric changed. **All six outputs written by the crashed run were checksummed before the rerun and were bit-identical afterwards**, which shows the rerun neither changed nor introduced a number. *Why it matters:* the run count is part of the result. A report claiming a clean single run, or a count of one, would misrepresent what happened.
+
 ---
 
 ## 3. Open questions (agent: do not block on these; use the stated default)

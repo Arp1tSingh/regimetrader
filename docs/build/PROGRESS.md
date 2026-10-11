@@ -6,10 +6,11 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 
 ## Current position
 
-- Phase: 5 **complete** (T5.1-T5.8)
-- Next task: **stopped and waiting for the human** — Phase 6 has not started, and `final_test.py` does not exist yet
-- Last gate passed: **P4** (`make check && make smoke`). Phases 3, 4 and 5 complete.
-- Test count: **423 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **447 total** with the slow set.
+- Phase: 6 **complete** (T6.1-T6.4). **Phase 7 not started.**
+- Next task: **stopped and waiting for the human** — `paper_live` must not be run without instruction
+- Last gate passed: **P5** (`make check && make smoke` after T5.8). Phases 3, 4, 5 and 6 complete.
+- Test count: **436 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **462 total** with the slow set.
+- Test period evaluated: **yes, once.** `TEST_RUN_LOCK.json` `run_count` **2** (one crash, one authorised rerun; reason in `test_run_log.jsonl`). Freeze commit `2d16451`; rerun commit `afefc4b`.
 
 ## 2026-10-10 — T5.6 and T5.7 results on the validation year
 
@@ -70,6 +71,38 @@ This is **not** because cash inflates Sharpe — Sharpe is a ratio and exposure 
 ### Expected outcome, restated
 
 > **The strategy trails buy-and-hold on return (4.6% against 19.5%) and on Sharpe against two of the three baselines. Drawdown looks better than buy-and-hold, but on one trade.**
+
+## 2026-10-11 — Phase 6 complete: the one-time test evaluation (T6.1-T6.4)
+
+**The run crashed once and was completed under `run_count` 2** (`DECISIONS` R45). Full
+report in `reports/results/RESULTS.md`.
+
+Test period **2024-01-01 to 2026-10-09**, 685 trading days. Frozen strategy **rf / 0.504415 / 10**.
+
+| run | Sharpe | 95% CI | CAGR | max DD | trades |
+|---|---|---|---|---|---|
+| **V2 strategy** | **0.4848** | **[−0.4561, 1.5437]** | **0.0548** | **0.1932** | 1,004 |
+| B1 `^NSEI` buy and hold | 0.1576 | [−0.7746, 1.1081] | 0.0120 | 0.1559 | 1 |
+| B2 equal weight | 0.7017 | [−0.1866, 1.6856] | 0.0882 | 0.1506 | 1,076 |
+| B3 trend `sma_20 > sma_50` | 0.6117 | [−0.2256, 1.4971] | 0.0502 | 0.0975 | 819 |
+| V0 classifier only | 0.4481 | [−0.5046, 1.4946] | 0.0596 | 0.2237 | 1,142 |
+| **V1 regime only** | **0.6738** | [−0.2337, 1.6914] | **0.1029** | 0.1637 | 322 |
+| V2 no costs | 0.8949 | [−0.0516, 1.9391] | 0.1115 | 0.1566 | 1,000 |
+
+- **Beat buy-and-hold on Sharpe (0.485 vs 0.158) and CAGR (0.055 vs 0.012); LOST on drawdown (0.193 vs 0.156).**
+- **Lost to B2 on all three**, and **to B3 on Sharpe and drawdown**, edging it only on CAGR.
+- **Every interval crosses zero, including the strategy's own.** Nothing is statistically distinguishable from luck.
+- **V1 (regime only) beat V2** by 0.19 Sharpe and 4.8 points of CAGR while trading 322 times instead of 1,004. The classifier was a net negative.
+- **Costs cost 0.41 Sharpe and 5.7 points of CAGR** (0.895 → 0.485).
+- **B4 on test: the strategy beat all 200 permutations** (null p90 −0.2272, best 0.1198) — but the null trades 2.5× more (2,478–2,735 vs 1,004), so it is handicapped (R44).
+- Test-period classifier edges over the majority baseline: logreg +0.0053, tree −0.0032, **rf +0.0044**, xgb +0.0094; all ROC-AUC 0.514–0.520. **No evidence the classifier adds value, and the report does not claim any.**
+- Yearly: 2024 +19.39%, 2025 +17.94%, **2026 to 10-09 −17.52%**.
+
+**Total counted trials: 338** (342 rows less 4 `calibration`): 5 regime_k + 4 model_year + 18 strategy_grid + 300 validation null sims + 3 validation baselines + 1 selection-rule revision + **7 final-test runs**. Run 1 of the grid is preserved and still counted.
+
+**Leakage checklist** (`reports/results/leakage_checklist.md`): 14 checks, each verified against the real warehouse rather than asserted from code. Regimes fitted through 2022-12-31; all 16 `dim_model` rows `trained_through = 2022-12-31` with the embargo assertion enforced in the trainer; fills equal the same day's open adjusted by slippage and never the previous close; zero persisted test-run rows before 2024-01-01; frozen config SHA-256 unchanged from the pre-run commit.
+
+**Nothing was changed in response to any number.** No config, threshold, model, seed or metric was touched after the results existed. `paper_live` was not run and Phase 7 has not started.
 
 ## 2026-10-11 — Pre-flight record for the one-time test evaluation
 
@@ -302,6 +335,13 @@ Two things to weigh before Phase 6, neither of which blocks it:
 | 2026-10-10 | **T5.7** | **Bug fixed: CAGR was NaN for every run** (R38). The equity frame had a `RangeIndex`, so `summarize` could not measure elapsed time — all 18 grid trials and all baselines reported a blank CAGR while every other metric looked healthy and nothing failed. The frame is now indexed by a `DatetimeIndex`. Guarded by `test_cagr_needs_a_datetime_index`. |
 | 2026-10-10 | **T5.7** | **Validation result: the strategy is beaten by every baseline on return** — V2 0.046 CAGR against B1 0.195, B2 0.389, B3 0.320. The pre-registered expectation is confirmed and the margin is wide. B4's first permutations, carrying no information, already produced Sharpe 3.48 / 3.04 / 1.80 against the strategy's 2.57. |
 | 2026-10-10 | tests | **408 fast tests, 430 total** (up from 352/373). Three of my own new tests were wrong and were corrected rather than weakened: `nan != nan`, a "clustering widens the interval" test built on i.i.d. data where it does not, and a "longer block widens the interval" test rebuilt on AR(1) data where it does. |
+| 2026-10-11 | **T6.2** | **The run crashed once and completed under `run_count` 2.** First invocation scored the strategy, ablations, baselines and classifiers, then crashed in B4: `b4_distribution` called `run_backtest` without `allow_test_period=True`, so the guard raised `ValueError`. Reported and held rather than re-run. The fix was one keyword parameter defaulting to `False`. **All six outputs checksummed before the rerun were bit-identical afterwards.** |
+| 2026-10-11 | **T6.2** | **Test results: beat buy-and-hold on Sharpe (0.485 vs 0.158) and CAGR (0.055 vs 0.012); lost on drawdown (0.193 vs 0.156).** Lost to B2 on all three and to B3 on Sharpe and drawdown. **Every CI crosses zero, including the strategy's own.** |
+| 2026-10-11 | **T6.2** | **The classifier is a net negative, shown by its own ablation.** V1 (regime filter only) beat V2 by 0.19 Sharpe and 4.8 points of CAGR while trading 322 times instead of 1,004. Test-period edges over the majority baseline are all within ±0.01 with ROC-AUC 0.514–0.520. **No claim is made that the classifier adds value.** |
+| 2026-10-11 | **T6.2** | **Costs cost 0.41 Sharpe and 5.7 points of CAGR** (`test_V2_nocost` 0.8949 against `backtest_main` 0.4848). B4 on test: the strategy beat all 200 permutations, but the null trades 2.5× more (2,478–2,735 vs 1,004) and is therefore handicapped — the R44 caveat carried into the report. |
+| 2026-10-11 | **T6.3** | **Leakage checklist written**, 14 checks each verified against the real warehouse rather than asserted from code: regime fit through 2022-12-31, all 16 `dim_model` rows `trained_through = 2022-12-31` with the embargo assertion in the trainer, fills equal the same day's open adjusted by slippage (ITC `403.628 = 403.426 × 1.0005`) and never the previous close, zero persisted test-run rows before 2024-01-01, frozen config SHA-256 unchanged from the freeze commit. |
+| 2026-10-11 | **T6.4** | `reports/results/RESULTS.md` written from the produced numbers, including the negative results. **Total counted trials: 338** (was 331 before the test run; the 7 final-test runs are the difference). Nothing changed in response to any number. |
+| 2026-10-11 | T6.4 | **Two defects in my own guard tests, found and fixed before the run**: they loaded the shipped smoke config whose paths point into the repo and wrote a `TEST_RUN_LOCK.json` into `reports_smoke/results/` (deleted; tests now redirect all paths under `tmp_path`); and the `allow_test_period` check used a text search that flagged `engine.py` for its own docstring (now `ast`-based). |
 | 2026-10-11 | **audit** | **B4 null audited, no bug found.** 100 null simulations recomputed and matched `trial_log.csv` to **2.2e-16**; counted trials unchanged at 331. The code audit confirms the permutation writes only `prob_up`, never touches prices, returns, regimes, costs or execution, and its draw depends only on row order so it cannot encode look-ahead. **Frozen config left exactly as it was.** |
 | 2026-10-11 | **audit** | **Caveat found and recorded (R44): B4 does not match the real run on turnover.** Null weight exposure 0.7468 against the real run's 0.7487 (matched), but the null executes **3.2×** the round trips (2,092 vs 655) because a permuted ranking reshuffles daily while the real model's probabilities are autocorrelated. A null handicapped that way is easier to beat. Recorded rather than corrected, since changing B4 after seeing the numbers would be a post-hoc adjustment. |
 | 2026-10-11 | **audit** | **The real run beats its own null by 21 points of CAGR while its classifier has no measurable edge** (+0.0001 accuracy over baseline, R36; quintile intervals contain zero, R35). Consistent with stable low-churn holdings capturing momentum rather than with prediction. **Explicitly not tested** — recorded as an open question. |
@@ -358,7 +398,7 @@ Two things to weigh before Phase 6, neither of which blocks it:
 **Phase 5 Strategy and backtest:** [x] T5.1 [x] T5.2 [x] T5.3 [x] T5.4 [x] T5.5 [x] T5.6 [x] T5.7 [x] T5.8
 
 **Gate P4:** `make check && make smoke`. **PASSED** — 352 fast tests, 373 total.
-**Phase 6 Final evaluation:** [ ] T6.1 [ ] T6.2 [ ] T6.3 [ ] T6.4
+**Phase 6 Final evaluation:** [x] T6.1 [x] T6.2 [x] T6.3 [x] T6.4
 **Phase 7 Paper trading:** [ ] T7.1 [ ] T7.2 [ ] T7.3 [ ] T7.4 [ ] T7.5
 **Phase 8 Dashboard:** [ ] T8.1 [ ] T8.2
 **Phase 9 Stretch:** [ ] T9.1 [ ] T9.2 [ ] T9.3 [ ] T9.4
@@ -380,8 +420,8 @@ Two things to weigh before Phase 6, neither of which blocks it:
 | Total trials logged | **331 counted** (335 rows less 4 `calibration`): 5 regime_k + 4 model_year + 18 strategy_grid (run 1 **and** run 2, upserted to the same 18) + **300 B4 null simulations** + 3 baselines + 1 selection-rule revision |
 | Validation backtest, strategy vs baselines | Selected rf/0.5044/10: Sharpe **1.833**, CAGR 0.207 · B1 `^NSEI` Sharpe **1.920**, CAGR 0.195 · B2 equal weight 3.467, 0.389 · B3 trend **3.899**, 0.320. **Beaten on Sharpe by all three baselines** |
 | B4 null audit (R44) | Null weight exposure 0.7468 vs the real run's 0.7487 (matched), but the null trades **3.2×** as often (2,092 vs 655 round trips). Recorded as a caveat, **not corrected**. Null Sharpe p10/p50/p90 = −0.720 / −0.012 / 0.658; recomputation matched the trial log to 2.2e-16 |
-| Test period evaluated? (date, lock file) | **No.** Never touched. `final_test.py` does not exist yet; `TEST_RUN_LOCK.json` does not exist |
-| Headline test results (strategy vs B1) | |
+| Test period evaluated? (date, lock file) | **Yes, once.** `TEST_RUN_LOCK.json` `run_count` **2** — one crash, one authorised rerun with the reason recorded in `test_run_log.jsonl`. Commit `afefc4b` |
+| Headline test results (strategy vs B1) | **Strategy Sharpe 0.4848 vs B1 0.1576; CAGR 0.0548 vs 0.0120; max drawdown 0.1932 vs 0.1559.** Block-bootstrap 95% CI on the strategy's Sharpe **[−0.4561, 1.5437]** — every interval crosses zero |
 
 ## Log
 
