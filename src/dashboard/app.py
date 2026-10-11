@@ -38,9 +38,9 @@ CAVEATS = [
     "**Costs dominate the result**: V2 without costs scores Sharpe 0.895 against 0.485 "
     "with them. Costs remove roughly 0.41 Sharpe and 5.7 points of CAGR.",
     "**The B4 null is handicapped** (R44): it is matched to the real run on capital "
-    "(weight exposure 0.758-0.775 against 0.749) but trades about 2.5x as often "
-    "(2,478-2,735 round trips against 1,004), so it pays more costs. 'Beat every "
-    "permutation' overstates the evidence.",
+    "(weight exposure 0.7468 against the real run's 0.7487, measured on validation) but "
+    "trades about 2.6x as often on the test period (2,478-2,735 round trips against "
+    "1,004), so it pays more costs. 'Beat every permutation' overstates the evidence.",
     "**The classifier's edge over always predicting 'up' was +0.0001** on validation, and "
     "the per-day top-minus-bottom-quintile return intervals all contained zero. No chart "
     "here should be read as evidence that the classifier adds value.",

@@ -39,9 +39,7 @@ for screen in SCREENS:
     ]
     headers = [t for t in titles if t.startswith("##")]
     print(f"{screen:22} charts={charts} tables={tables} sections={headers}")
-    for note in (
-        list(at.warning) + list(at.error) + list(at.info)
-    ):
+    for note in list(at.warning) + list(at.error) + list(at.info):
         value = str(getattr(note, "value", "")).strip().replace("\n", " ")
         print(f"    {value[:110]}")
 print("\nno exceptions on any screen.")

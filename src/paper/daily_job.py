@@ -647,7 +647,9 @@ def run(
     if not no_etl:
         from src.etl.pipeline import run as etl_run
 
-        code = etl_run(cfg, full_refresh=False)
+        # `source` and `limit_symbols` are keyword-only and required; None means
+        # "use the configured source" and "no symbol limit" respectively.
+        code = etl_run(cfg, full_refresh=False, source=None, limit_symbols=None)
         if code != 0:
             message = "incremental ETL failed; refusing to trade on stale data"
             alerts.alert(cfg, "ERROR", message)

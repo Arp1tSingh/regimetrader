@@ -135,6 +135,59 @@ def test_the_daily_job_never_writes_fact_signal_up_to_the_lock_date(
             conn.exec_driver_sql("DELETE FROM {} WHERE run_id='paper_live'".format(table))
 
 
+def test_the_daily_job_calls_the_etl_with_every_required_argument(
+    signals_ready: tuple, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: `make paper` crashed on an incomplete call to `etl_run`.
+
+    `src.etl.pipeline.run` takes keyword-only `source` and `limit_symbols`. The job
+    called it with only `full_refresh`, so every `make paper` run raised
+    `TypeError: run() missing 2 required keyword-only arguments`. The Phase 7 run had
+    used `--no-etl`, so this path was never exercised until the handoff ran the
+    documented command for real.
+    """
+    import src.etl.pipeline as pipeline
+    import src.paper.daily_job as job
+
+    cfg_obj, engine = signals_ready
+    calls: list[dict[str, Any]] = []
+
+    def spy(cfg: Any, **kwargs: Any) -> int:
+        calls.append(dict(kwargs))
+        return 0
+
+    monkeypatch.setattr(pipeline, "run", spy)
+
+    results = Path(cfg_obj["paths"]["results"])
+    results.mkdir(parents=True, exist_ok=True)
+    (results / "TEST_RUN_LOCK.json").write_text(
+        json.dumps({"run_count": 1, "data_end_date": "20221230"}), encoding="utf-8"
+    )
+    # `guards` refuses a live run outright when the frozen config is missing, so the
+    # test has to satisfy it or it never reaches the ETL.
+    frozen = Path(cfg_obj["paths"]["frozen_config"])
+    frozen.parent.mkdir(parents=True, exist_ok=True)
+    frozen.write_text("strategy:\n  selected_model: rf\n", encoding="utf-8")
+
+    job.run(
+        {**cfg_obj, "paper": {**cfg_obj["paper"], "run_id": "paper_live"}},
+        run_id="paper_live",
+        no_etl=False,
+    )
+
+    assert calls, "the job must run the incremental ETL when no_etl is False"
+    assert calls[0]["full_refresh"] is False, "a daily job must never full-refresh"
+    for required in ("source", "limit_symbols"):
+        assert required in calls[0], f"etl_run was called without {required}; it is keyword-only"
+    assert calls[0]["source"] is None, "None means 'use the configured source'"
+    assert calls[0]["limit_symbols"] is None
+
+    (results / "TEST_RUN_LOCK.json").unlink(missing_ok=True)
+    with engine.begin() as conn:
+        for table in ("fact_trade", "fact_portfolio_daily", "pending_target"):
+            conn.exec_driver_sql("DELETE FROM {} WHERE run_id='paper_live'".format(table))
+
+
 def test_ensure_inputs_refuses_a_date_it_may_not_write(
     signals_ready: tuple,
 ) -> None:

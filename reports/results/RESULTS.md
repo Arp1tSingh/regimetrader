@@ -110,12 +110,14 @@ The permutation null beat-or-matched is the strongest single statement here: the
 strategy's Sharpe of 0.4848 sits above **all 200** test-period permutations, whose 90th
 percentile was **−0.2272** and whose best was **0.1198**.
 
-**This must be read with a large discount.** B4 is matched to the real run on capital
-(weight exposure 0.758–0.775 against 0.749) but **not on turnover**: the null executes
-2,478–2,735 round trips against the real run's 1,004, because a permuted ranking
-reshuffles daily while the real model's autocorrelated probabilities give it stable
-holdings. The null therefore pays about 2.5× the trading costs. A null handicapped that
-way is easier to beat, so "beat every permutation" overstates the evidence.
+**This must be read with a large discount.** B4 is matched to the real run on capital —
+that match was measured on validation, where the null's mean weight exposure was 0.7468
+against the real run's 0.7487 (R44) — but **not on turnover**. On the test period the
+null executes 2,478–2,735 round trips against the real run's 1,004, about **2.6×** as
+many, because a permuted ranking reshuffles daily while the real model's autocorrelated
+probabilities give it stable holdings. The null therefore pays roughly two and a half
+times the trading costs. A null handicapped that way is easier to beat, so "beat every
+permutation" overstates the evidence.
 
 The same asymmetry was measured on validation (R44) and was **disclosed rather than
 corrected**, because changing the null after seeing its numbers would have been a

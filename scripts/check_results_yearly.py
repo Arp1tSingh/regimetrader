@@ -50,7 +50,7 @@ def main() -> int:
         if len(cells) != len(ORDER):
             problems.append(f"{year}: {len(cells)} cells, expected {len(ORDER)}")
             continue
-        for label, cell in zip(ORDER, cells):
+        for label, cell in zip(ORDER, cells, strict=False):
             shown = float(cell.replace(MINUS, "-").replace("%", "").replace("+", ""))
             want = float(expected[label]) * 100.0
             if abs(shown - want) > 0.005:

@@ -80,7 +80,7 @@ paper:
 	$(PY) -m src.paper.daily_job --config $(CFG)
 
 dashboard:
-	$(PY) -m streamlit run src/dashboard/app.py
+	$(PY) -m streamlit run src/dashboard/app.py --server.headless true --browser.gatherUsageStats false
 
 clean:
 	$(CLEAN)

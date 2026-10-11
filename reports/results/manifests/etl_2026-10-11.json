@@ -1,0 +1,29 @@
+{
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\paper\\daily_job.py --config config/config.yaml",
+  "config_hash": "dace7f38d514",
+  "data_range": {
+    "first_date_key": 20150102,
+    "last_date_key": 20261009
+  },
+  "extra": {
+    "mode": "INCREMENTAL",
+    "rows_extracted": 260,
+    "rows_loaded": 260,
+    "rows_rejected": 0,
+    "source": "yfinance",
+    "start_date": "2026-10-04",
+    "symbols": 52
+  },
+  "git_commit": "391ac2731ec71a167699fa195844c341d5a91ae9",
+  "models_used": [],
+  "package_versions": {
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "python": "3.14.8",
+    "scikit-learn": "1.9.1",
+    "xgboost": "3.4.1"
+  },
+  "run_id": "etl_2026-10-11",
+  "seed": 42,
+  "timestamp": "2026-10-11T14:00:17+00:00"
+}

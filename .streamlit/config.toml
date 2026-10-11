@@ -1,0 +1,10 @@
+# Streamlit configuration, committed so a fresh clone runs without prompting.
+#
+# `gatherUsageStats = false` disables telemetry. Streamlit's first-run "Email:"
+# onboarding prompt is NOT suppressed by this setting, nor by the
+# `--browser.gatherUsageStats false` command-line switch in Streamlit 1.65; it is
+# suppressed only by `--server.headless true`, which the `dashboard` Makefile target
+# passes. That was found by running the documented command for real rather than
+# trusting that it worked. See `DECISIONS` R50.
+[browser]
+gatherUsageStats = false
