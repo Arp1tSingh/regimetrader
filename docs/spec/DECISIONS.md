@@ -124,6 +124,16 @@ Measured: xgb reaches 0.52 on 60.0% of days, so it uses the absolute grid `{0.55
 
 **R43. Trial accounting across two grids.** *Now:* run 1's 18 configurations **remain in the trial log and remain counted**. Run 2 adds its own 18, and each B4 null simulation is logged as `kind = "other"`. The reported total is every row with `kind != "calibration"`. A `kind = "other"` row noting that the selection rule was revised after run 1 is logged so the trial log itself carries the history, not just the CSV files. *Why:* a revised protocol that silently replaces the first attempt's results is indistinguishable from having tuned until something looked good.
 
+**R44. B4 does not match the real run on turnover — a caveat, not a bug.** *Verified by audit on 2026-10-11.* `spec 06` section 6 describes B4 as keeping "exposure, regime behaviour and turnover roughly equal". Two of the three hold; **turnover does not**. Measured over 100 null simulations of the frozen configuration against the real run:
+
+| | days in position | weight exposure | round trips | Sharpe |
+|---|---|---|---|---|
+| real run (rf / 0.5044 / 10) | 0.996 | see `null_diagnostic_reference.csv` | 655 | 1.833 |
+| B4 null, median | 0.996 | — | **~2,090** | −0.012 |
+| B1 `^NSEI` | 0.996 | 1.000 | 1 | 1.920 |
+
+The null reshuffles its ten holdings almost every day, because a permuted probability ranking is unrelated to yesterday's and so the top ten change constantly; the real model's probabilities are autocorrelated and its holdings are stable. The null therefore trades **roughly three times as often** and pays roughly three times the costs. A null handicapped this way is **easier to beat**, so "cleared its own null" is a weaker statement than it sounds, and the shortfall of the real run's 1.833 against B1's 1.920 is not explained by it. *Recorded rather than corrected:* the filter rule is unchanged, and changing B4 now, after seeing the numbers, would be exactly the post-hoc adjustment this file exists to prevent. *Why:* `weight_exposure` was added to the reported metrics because `exposure` counts days with any position and cannot distinguish a book running at 30% of capital from one running at 100%.
+
 ---
 
 ## 3. Open questions (agent: do not block on these; use the stated default)

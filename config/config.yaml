@@ -102,6 +102,9 @@ tuning:                                       # validation-year grid; every comb
   entry_base_grid: [0.55, 0.60]
   slots_grid: [5, 10]
   select_by: sharpe                           # tie-break: lower turnover
+  null_sims: 100                              # B4 simulations per shortlisted config (DECISIONS R40)
+  min_round_trips: 30                         # activity filter (DECISIONS R39)
+  min_exposure: 0.10                          # activity filter (DECISIONS R39)
 
 paper:
   run_id: paper_live                          # starting capital is backtest.initial_capital

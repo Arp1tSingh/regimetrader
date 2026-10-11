@@ -36,6 +36,7 @@ backtest:
 
 tuning:
   models: [logreg, rf]
+  null_sims: 10          # smoke only; the real warehouse uses 100 (DECISIONS R40)
 
 olap:
   pivot_years: [2021, 2022, 2023]

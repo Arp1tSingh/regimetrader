@@ -62,7 +62,8 @@ MAX_TIE_BREAK_SHARE = 0.05
 MIN_ROUND_TRIPS = 30
 MIN_EXPOSURE = 0.10
 
-#: R40 null filter.
+#: R40 null filter. `NULL_SIMS` is the default; `tuning.null_sims` overrides it so a
+#: smoke run stays fast. The real-warehouse value stays 100.
 NULL_SHORTLIST_SIZE = 3
 NULL_SIMS = 100
 NULL_PERCENTILE = 90.0
@@ -72,19 +73,27 @@ DEFAULT_ENTRY_BASE = 0.55
 DEFAULT_SLOTS = 10
 
 
-def _activity_eligible(grid: pd.DataFrame) -> pd.DataFrame:
+def _activity_eligible(grid: pd.DataFrame, cfg: dict[str, Any] | None = None) -> pd.DataFrame:
     """Rows passing the R39 activity filter, with a finite Sharpe.
 
     NaN Sharpes are dropped here rather than sorted around: relying on pandas placing
     NaN last would hide the exclusion and could let a NaN win under a sort change.
+
+    Args:
+        grid: Grid rows.
+        cfg: Loaded config; `tuning.min_round_trips` and `tuning.min_exposure` override
+            the module defaults.
     """
     if grid.empty:
         return grid
+    tuning = (cfg or {}).get("tuning", {})
+    min_trades = int(tuning.get("min_round_trips", MIN_ROUND_TRIPS))
+    min_exposure = float(tuning.get("min_exposure", MIN_EXPOSURE))
     mask = (
         grid["traded"].astype(bool)
         & grid["sharpe"].notna()
-        & (grid["n_trades"].fillna(0).astype(int) >= MIN_ROUND_TRIPS)
-        & (grid["exposure"].fillna(0.0).astype(float) >= MIN_EXPOSURE)
+        & (grid["n_trades"].fillna(0).astype(int) >= min_trades)
+        & (grid["exposure"].fillna(0.0).astype(float) >= min_exposure)
         & ~grid["tie_break_flagged"].astype(bool)
     )
     return grid[mask]
@@ -118,7 +127,13 @@ def _null_percentile(
         },
     }
     distribution = b4_distribution(
-        variant, engine, start, end, sims=NULL_SIMS, model=str(row["model"]), log=None
+        variant,
+        engine,
+        start,
+        end,
+        sims=int(cfg["tuning"].get("null_sims", NULL_SIMS)),
+        model=str(row["model"]),
+        log=None,
     )
     sharpes = distribution["sharpe"].dropna()
     p90 = float(sharpes.quantile(NULL_PERCENTILE / 100.0)) if len(sharpes) else float("nan")
@@ -568,7 +583,7 @@ def run(cfg: dict[str, Any], *, apply_fallback: bool = True) -> dict[str, Any]:
     # ---------------------------------------------------------------- selection
     # R42: Sharpe alone is never sufficient. A configuration must first clear the
     # activity filter (R39) and then beat the B4 null for its own settings (R40).
-    candidates = _activity_eligible(grid)
+    candidates = _activity_eligible(grid, cfg)
     log.info(
         "activity filter (R39: n_trades >= %d, exposure >= %.0f%%): %d of %d configuration(s)",
         MIN_ROUND_TRIPS,

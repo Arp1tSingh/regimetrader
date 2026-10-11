@@ -104,7 +104,6 @@ def b4_distribution(
     from src.backtest.metrics import summarize, weight_exposure
     from src.backtest.strategies import make_weights_fn
     from src.common.db import execute_many, read_sql
-    from src.features.panel import TARGET_COL, build_panel
 
     count = int(sims if sims is not None else cfg["backtest"]["random_baseline_sims"])
     seed = int(cfg["project"]["seed"])
@@ -345,6 +344,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--start", default=None)
     parser.add_argument("--end", default=None)
     parser.add_argument("--sims", type=int, default=None)
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Run B1 to B4. This is the default; the flag is accepted for the Makefile.",
+    )
     parser.add_argument("--no-b4", action="store_true")
     return parser
 
