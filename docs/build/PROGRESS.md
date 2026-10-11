@@ -6,10 +6,10 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 
 ## Current position
 
-- Phase: 5
-- Next task: **stopped and waiting for the human** — T5.6 and T5.7 are done, Phase 6 has not started
-- Last gate passed: **P4** (`make check && make smoke`). Phases 3 and 4 complete; T5.1-T5.7 done.
-- Test count: **408 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **430 total** with the slow set.
+- Phase: 5 **complete** (T5.1-T5.8)
+- Next task: **stopped and waiting for the human** — Phase 6 has not started, and `final_test.py` does not exist yet
+- Last gate passed: **P4** (`make check && make smoke`). Phases 3, 4 and 5 complete.
+- Test count: **423 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **447 total** with the slow set.
 
 ## 2026-10-10 — T5.6 and T5.7 results on the validation year
 
@@ -70,6 +70,38 @@ This is **not** because cash inflates Sharpe — Sharpe is a ratio and exposure 
 ### Expected outcome, restated
 
 > **The strategy trails buy-and-hold on return (4.6% against 19.5%) and on Sharpe against two of the three baselines. Drawdown looks better than buy-and-hold, but on one trade.**
+
+## 2026-10-11 — B4 null audit (`DECISIONS` R44): caveat, no bug, freeze unchanged
+
+Read-only diagnostic on the frozen configuration (rf / 0.504415 / 10), validation year only. Recomputation of all 100 null simulations **matched `trial_log.csv` to 2.2e-16**, and the counted trials are unchanged at **331**, so the null is exactly reproducible and nothing drifted.
+
+| | null p10 | null p50 | null p90 | **real run** | **B1 `^NSEI`** |
+|---|---|---|---|---|---|
+| days in position | 0.9959 | 0.9959 | 0.9959 | 0.9959 | 0.9959 |
+| **weight exposure** | 0.7409 | 0.7468 | 0.7531 | **0.7487** | **0.9877** |
+| round trips | 2053.7 | 2092.5 | 2129.1 | **655** | **1** |
+| CAGR | −0.0653 | −0.0064 | 0.0612 | **0.2070** | **0.1955** |
+| Sharpe | −0.7197 | −0.0123 | 0.6581 | **1.8328** | **1.9195** |
+
+**Why the null's median Sharpe is −0.012 while B1 is 1.920.** It is an exposure difference, not skill. B1 holds 0.988 of capital and applies no regime rules. The null runs V2's regime ladder (BULL 1.00, SIDEWAYS 0.60, HIGH_VOL 0.30, BEAR 0.00) and averages 0.747, so on this validation year the de-risking cost it return: median CAGR −0.006 against B1's +0.195. Null exposure is **not** lower than the *real run's* — 0.7468 against 0.7487, a 0.2 point gap.
+
+**The real gap, and it is not explained by exposure.** The real run carries the same regime rules and the same 0.749 weight exposure and still returns +0.207, beating its own null by 21 points of CAGR. Its classifier has a **+0.0001** accuracy edge over the majority baseline (R36) and quintile-spread intervals that all contain zero (R35), so a genuinely predictive classifier cannot be what produced that. The gap is consistent with the real run's **stable, low-churn** holdings (655 round trips against the null's 2,092) capturing whatever momentum exists, while the null's daily reshuffling captures none. **This was not tested** and is recorded as an open question, not a finding.
+
+**Turnover is the caveat.** B4 is specified to keep exposure, regime behaviour and turnover roughly equal. It keeps the first two but **not turnover**: the null trades **3.2×** as often, because a permuted ranking has no relation to yesterday's while the real model's autocorrelated probabilities do. A null handicapped that way is easier to beat, so "cleared its own null" is weaker than it sounds. **Recorded, not corrected** — changing B4 after seeing these numbers would be exactly the post-hoc adjustment this project exists to prevent, so the rule stands and the frozen config is unchanged.
+
+**Code audit (item 3) confirmed clean.** `permuted_signals` writes exactly one column, `prob_up`; `regime_key` comes from the unmodified `fact_market_regime` map and `signal`/`target_weight` are constants. B4 touches only `fact_signal` rows under a dedicated `dim_model` key, deleted in a `finally` block; prices, returns, costs and execution are untouched and `persist=False`. The draw is `rng.permutation(positions)` from `project.seed + sim` — it depends only on row order and never on a value, so no forward-looking quantity can enter it.
+
+**New test (item 4):** `test_null_sharpe_centres_on_equal_weight_when_every_stock_is_eligible` — with `entry_base` 0.0 so every stock always qualifies and slots covering the universe, the null's median Sharpe must sit within **0.60** of the equal-weight result. It passes, so the null genuinely behaves like an uninformed portfolio. Two supporting tests assert the permutation touches no other column and is invariant to value scaling.
+
+**Also fixed:** `weight_exposure` was added to the reported metrics. `exposure` counts days with any position and so read 0.9959 for every run including ones running at 30% of capital — it could not have surfaced this diagnostic at all.
+
+## 2026-10-11 — T5.8 complete: smoke wiring and the real validation run
+
+`make smoke` now runs `tune` and `baselines` end to end and **passes** (exit 0) on synthetic data, exercising both selection filters, the B4 null path and the frozen-config write. `tuning.null_sims` is config-driven: 100 on the real warehouse as R40 specifies, 10 on smoke so the pipeline stays fast. `--all` was added to the `baselines` CLI to match the Makefile.
+
+Acceptance for T5.8 met on both counts: `make smoke` passes, and `reports/results/summary_validation.csv` exists on the **real** warehouse. The smoke run wrote only to `reports_smoke/`; the real freeze is byte-for-byte unchanged (rf / 0.504415 / 10, 331 counted trials).
+
+**The smoke run's own selection is a wiring result, not a research result.** On synthetic data it selected logreg / 0.5161 / 5 with a validation Sharpe of **−0.0216**, which "beat" its null p90 of −0.0736. That number means nothing about real markets and must not be quoted anywhere. It is recorded here only so it is not later mistaken for evidence.
 
 ## 2026-10-10 — T5.6 run 2, with the activity and null filters (R39-R42)
 
@@ -207,13 +239,18 @@ recorded.
 
 ## Open question for the human
 
-**None outstanding for T5.6/T5.7.** The selection-rule question was decided: activity
-and null filters were added (R39-R42), disclosed as post-hoc, run 1 preserved and
-counted. Phase 6 has not started.
+**None outstanding for Phase 5.** The selection-rule question was decided (activity and
+null filters, R39-R42, disclosed as post-hoc, run 1 preserved and counted). Phase 6 has
+not started and `final_test.py` does not exist yet.
 
-Worth knowing before Phase 6: the surviving configuration cleared its own null but still
-**lost to plain buy-and-hold on Sharpe**, and the classifier's accuracy edge over the
-majority baseline is zero (R36). See "Interpretation" above.
+Two things to weigh before Phase 6, neither of which blocks it:
+
+1. The surviving configuration cleared its own null but still **lost to plain
+   buy-and-hold on Sharpe**, and the classifier's accuracy edge over the majority
+   baseline is zero (R36). See "Interpretation" above.
+2. The real run beats its own null by 21 points of CAGR while its classifier shows **no
+   measurable edge**. The likely mechanism is low-churn holdings rather than prediction
+   (R44). This was **not tested** and would need a dedicated check.
 
 ## Log
 
@@ -230,6 +267,13 @@ majority baseline is zero (R36). See "Interpretation" above.
 | 2026-10-10 | **T5.7** | **Bug fixed: CAGR was NaN for every run** (R38). The equity frame had a `RangeIndex`, so `summarize` could not measure elapsed time — all 18 grid trials and all baselines reported a blank CAGR while every other metric looked healthy and nothing failed. The frame is now indexed by a `DatetimeIndex`. Guarded by `test_cagr_needs_a_datetime_index`. |
 | 2026-10-10 | **T5.7** | **Validation result: the strategy is beaten by every baseline on return** — V2 0.046 CAGR against B1 0.195, B2 0.389, B3 0.320. The pre-registered expectation is confirmed and the margin is wide. B4's first permutations, carrying no information, already produced Sharpe 3.48 / 3.04 / 1.80 against the strategy's 2.57. |
 | 2026-10-10 | tests | **408 fast tests, 430 total** (up from 352/373). Three of my own new tests were wrong and were corrected rather than weakened: `nan != nan`, a "clustering widens the interval" test built on i.i.d. data where it does not, and a "longer block widens the interval" test rebuilt on AR(1) data where it does. |
+| 2026-10-11 | **audit** | **B4 null audited, no bug found.** 100 null simulations recomputed and matched `trial_log.csv` to **2.2e-16**; counted trials unchanged at 331. The code audit confirms the permutation writes only `prob_up`, never touches prices, returns, regimes, costs or execution, and its draw depends only on row order so it cannot encode look-ahead. **Frozen config left exactly as it was.** |
+| 2026-10-11 | **audit** | **Caveat found and recorded (R44): B4 does not match the real run on turnover.** Null weight exposure 0.7468 against the real run's 0.7487 (matched), but the null executes **3.2×** the round trips (2,092 vs 655) because a permuted ranking reshuffles daily while the real model's probabilities are autocorrelated. A null handicapped that way is easier to beat. Recorded rather than corrected, since changing B4 after seeing the numbers would be a post-hoc adjustment. |
+| 2026-10-11 | **audit** | **The real run beats its own null by 21 points of CAGR while its classifier has no measurable edge** (+0.0001 accuracy over baseline, R36; quintile intervals contain zero, R35). Consistent with stable low-churn holdings capturing momentum rather than with prediction. **Explicitly not tested** — recorded as an open question. |
+| 2026-10-11 | audit | **`weight_exposure` metric added.** `exposure` counts days with any position and read 0.9959 for every run including those at 30% of capital, so it could not distinguish the null from the real run. The size-weighted measure could. |
+| 2026-10-11 | audit | **New test**: with `entry_base` 0.0 so every stock always qualifies and slots covering the universe, the null's median Sharpe must sit within **0.60** of the equal-weight result. It passes, so the null behaves like an uninformed portfolio. Supporting tests assert the permutation touches no other column and is invariant to value scaling. |
+| 2026-10-11 | **T5.8** | `make smoke` runs `tune` and `baselines` end to end and **passes** (exit 0). `tuning.null_sims` is config-driven (100 real, 10 smoke) and `--all` added to the `baselines` CLI for the Makefile. Acceptance met: `make smoke` passes **and** `reports/results/summary_validation.csv` exists on the real warehouse. Smoke wrote only to `reports_smoke/`; the real freeze is unchanged. |
+| 2026-10-11 | T5.8 | **The smoke run's selection is wiring, not evidence.** On synthetic data it selected logreg/0.5161/5 with Sharpe **−0.0216** against a null p90 of −0.0736. Recorded only so it is not later mistaken for a result. |
 | 2026-10-10 | **T5.6 run 2** | **Activity filter (R39): 10 of 18 configurations passed** (≥30 round trips, ≥10% mean exposure). It removed exactly the degenerate 1-trade winners. |
 | 2026-10-10 | **T5.6 run 2** | **Null filter (R40): 1 of 3 shortlisted passed.** xgb/0.55/5 scored 2.313 against its own null p90 of **2.384** and xgb/0.55/10 scored 2.093 against **2.179** — both fail. rf/0.5044/10 scored 1.833 against a null p90 of **0.658** (null median −0.012) — passes. Each null used **100 simulations**, seed from config, under that configuration's own entry base and slots. |
 | 2026-10-10 | **T5.6 run 2** | **Frozen: `rf`, `entry_base` 0.504415, `slots` 10**, `meta.method = activity_and_null_filtered`, `demonstrated_edge: true`. **Total 331 counted trials** including run 1's 18 configurations (preserved, still counted) and all 300 null simulations. |
@@ -276,7 +320,7 @@ majority baseline is zero (R36). See "Interpretation" above.
 **Gate P2:** `make check && make smoke`. **PASSED.**
 **Phase 3 Regimes:** [x] T3.1 [x] T3.2 [x] T3.3 [x] T3.4 [x] T3.5
 **Phase 4 Classifiers:** [x] T4.1 [x] T4.2 [x] T4.3 [x] T4.4 [x] T4.5
-**Phase 5 Strategy and backtest:** [x] T5.1 [x] T5.2 [x] T5.3 [x] T5.4 [x] T5.5 [x] T5.6 [x] T5.7 [ ] T5.8
+**Phase 5 Strategy and backtest:** [x] T5.1 [x] T5.2 [x] T5.3 [x] T5.4 [x] T5.5 [x] T5.6 [x] T5.7 [x] T5.8
 
 **Gate P4:** `make check && make smoke`. **PASSED** — 352 fast tests, 373 total.
 **Phase 6 Final evaluation:** [ ] T6.1 [ ] T6.2 [ ] T6.3 [ ] T6.4
@@ -300,6 +344,7 @@ majority baseline is zero (R36). See "Interpretation" above.
 | Classifier accuracy versus majority baseline (validation year 2023, n=12,044) | baseline **0.5315**. rf 0.5125 (−0.0190) · xgb 0.5059 (−0.0256) · logreg 0.4980 (−0.0335) · tree 0.5316 (**+0.0001**). **All four at or below baseline.** The earlier "+2.44" was a training-period baseline and is withdrawn (`DECISIONS` R36) |
 | Total trials logged | **331 counted** (335 rows less 4 `calibration`): 5 regime_k + 4 model_year + 18 strategy_grid (run 1 **and** run 2, upserted to the same 18) + **300 B4 null simulations** + 3 baselines + 1 selection-rule revision |
 | Validation backtest, strategy vs baselines | Selected rf/0.5044/10: Sharpe **1.833**, CAGR 0.207 · B1 `^NSEI` Sharpe **1.920**, CAGR 0.195 · B2 equal weight 3.467, 0.389 · B3 trend **3.899**, 0.320. **Beaten on Sharpe by all three baselines** |
+| B4 null audit (R44) | Null weight exposure 0.7468 vs the real run's 0.7487 (matched), but the null trades **3.2×** as often (2,092 vs 655 round trips). Recorded as a caveat, **not corrected**. Null Sharpe p10/p50/p90 = −0.720 / −0.012 / 0.658; recomputation matched the trial log to 2.2e-16 |
 | Test period evaluated? (date, lock file) | **No.** Never touched. `final_test.py` does not exist yet; `TEST_RUN_LOCK.json` does not exist |
 | Headline test results (strategy vs B1) | |
 

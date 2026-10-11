@@ -124,15 +124,27 @@ Measured: xgb reaches 0.52 on 60.0% of days, so it uses the absolute grid `{0.55
 
 **R43. Trial accounting across two grids.** *Now:* run 1's 18 configurations **remain in the trial log and remain counted**. Run 2 adds its own 18, and each B4 null simulation is logged as `kind = "other"`. The reported total is every row with `kind != "calibration"`. A `kind = "other"` row noting that the selection rule was revised after run 1 is logged so the trial log itself carries the history, not just the CSV files. *Why:* a revised protocol that silently replaces the first attempt's results is indistinguishable from having tuned until something looked good.
 
-**R44. B4 does not match the real run on turnover — a caveat, not a bug.** *Verified by audit on 2026-10-11.* `spec 06` section 6 describes B4 as keeping "exposure, regime behaviour and turnover roughly equal". Two of the three hold; **turnover does not**. Measured over 100 null simulations of the frozen configuration against the real run:
+**R44. B4 does not match the real run on turnover — a caveat, not a bug.** *Audited 2026-10-11.* `spec 06` section 6 describes B4 as keeping "exposure, regime behaviour and turnover roughly equal". Two of the three hold; **turnover does not**.
 
-| | days in position | weight exposure | round trips | Sharpe |
-|---|---|---|---|---|
-| real run (rf / 0.5044 / 10) | 0.996 | see `null_diagnostic_reference.csv` | 655 | 1.833 |
-| B4 null, median | 0.996 | — | **~2,090** | −0.012 |
-| B1 `^NSEI` | 0.996 | 1.000 | 1 | 1.920 |
+Measured over the frozen configuration's 100 null simulations (recomputation matched `trial_log.csv` to 2.2e-16, so the null is exactly reproducible and nothing drifted):
 
-The null reshuffles its ten holdings almost every day, because a permuted probability ranking is unrelated to yesterday's and so the top ten change constantly; the real model's probabilities are autocorrelated and its holdings are stable. The null therefore trades **roughly three times as often** and pays roughly three times the costs. A null handicapped this way is **easier to beat**, so "cleared its own null" is a weaker statement than it sounds, and the shortfall of the real run's 1.833 against B1's 1.920 is not explained by it. *Recorded rather than corrected:* the filter rule is unchanged, and changing B4 now, after seeing the numbers, would be exactly the post-hoc adjustment this file exists to prevent. *Why:* `weight_exposure` was added to the reported metrics because `exposure` counts days with any position and cannot distinguish a book running at 30% of capital from one running at 100%.
+| | null p10 | null p50 | null p90 | **real run** | **B1 `^NSEI`** |
+|---|---|---|---|---|---|
+| days in position | 0.9959 | 0.9959 | 0.9959 | 0.9959 | 0.9959 |
+| **weight exposure** | 0.7409 | 0.7468 | 0.7531 | **0.7487** | **0.9877** |
+| round trips | 2053.7 | 2092.5 | 2129.1 | **655** | **1** |
+| CAGR | −0.0653 | −0.0064 | 0.0612 | **0.2070** | **0.1955** |
+| Sharpe | −0.7197 | −0.0123 | 0.6581 | **1.8328** | **1.9195** |
+
+Two things follow, and they must not be conflated.
+
+**The null is matched to the real run on capital, and badly mismatched on churn.** Mean weight exposure is 0.7468 against the real run's 0.7487 — a 0.2 percentage-point gap. But the null executes **3.2 times** as many round trips (2,092 against 655), because a permuted ranking bears no relation to yesterday's, so its top ten reshuffles almost daily, while the real model's autocorrelated probabilities give it stable holdings. The null therefore pays roughly three times the trading costs. **A null handicapped this way is easier to beat**, so "cleared its own null" is a weaker statement than it sounds.
+
+**The null's median Sharpe of −0.012 against B1's 1.920 is an exposure difference, not a skill difference.** B1 holds 0.988 of capital and applies no regime rules at all. The null runs V2's regime ladder (BULL 1.00, SIDEWAYS 0.60, HIGH_VOL 0.30, BEAR 0.00) and averages 0.747, cutting to a third of capital in HIGH_VOL and to cash in BEAR. On the validation year that de-risking cost return: the null's median CAGR is −0.006 against B1's +0.195.
+
+**The contrast with the real run is the open question, not a result.** The real run carries the **same** regime rules and the **same** 0.749 weight exposure and still returns +0.207, beating its own null by 21 points of CAGR — while its classifier has a **+0.0001** accuracy edge over the majority baseline (R36) and cross-sectional quintile spreads whose intervals all contain zero (R35). A classifier with no measurable direction edge should not produce that gap. The gap is consistent with the real run's *stable, low-churn* holdings capturing whatever momentum exists while the null's daily reshuffling captures none — that is, the advantage may come from holding behaviour rather than from prediction. **This was not tested.** It would need a dedicated check (for example re-running the real configuration with its holdings permuted but its churn held fixed, or measuring the autocorrelation of the chosen holdings). Recorded as an open question, not as a finding.
+
+*Rule unchanged and the frozen config left as is.* The filter is applied exactly as R40 states. Correcting B4 now, after seeing these numbers, would be precisely the post-hoc adjustment this file exists to prevent; the asymmetry is disclosed instead. *Why `weight_exposure` was added:* `exposure` counts days with any position and cannot distinguish a book running at 30% of capital from one running at 100%, so it could not have surfaced this.
 
 ---
 
