@@ -190,6 +190,20 @@ Two things follow, and they must not be conflated.
 
 *Why this is recorded alongside R51:* two independent, unrelated mechanisms — an over-broad ignore rule (R51) and a test reading untracked state (R52) — produced the same symptom, a suite that is green locally and broken on a clone. Neither is detectable from inside the working directory. That is now the single most load-bearing lesson in this project.
 
+**R53. A guard written to catch R52 destroyed the artifacts it was guarding.** *2026-10-11.* A static test cannot detect R52, because the test source never names the ignored file — it names a *tracked* config whose *contents* point at an ignored database. So the first response was `scripts/check_pristine.py`: hide every gitignored artifact by renaming it aside, run the fast suite, restore in a `finally`.
+
+**It worked as designed and still destroyed data.** Both runs hid the artifacts and reported `restored N artifact(s)`. Afterwards `data/warehouse/smoke.db` was a **4096-byte** empty database instead of 16 MB, `reports_smoke`, `models_smoke`, `logs_smoke`, `data/raw_smoke` and `data/processed_smoke` were **empty directories**, and `config/frozen_config.smoke.yaml.__pristine__` was **left behind as a stash**. The cause is straightforward in hindsight: the tests *recreate* the hidden paths, `Path.rename` will not overwrite on Windows, and restore depended on execution order. A stash that survives means the `finally` did not complete its work.
+
+*Blast radius, precisely:* every casualty is gitignored and regenerable by `make smoke` (~18 min). **Nothing committed was lost, and no real data was touched** — `fact_price` 143,481, `fact_signal` 184,976, `fact_portfolio_daily` 4,795, `fact_trade` 5,364, and 18 trained model files were all verified intact afterwards. The surviving stash was recovered by hand. The loss was hours of local artifact state and, more importantly, **a demonstration that the tool was unsafe**.
+
+*Why the tool was wrong, not just buggy:* anything that deletes real directories and depends on cleanup for its safety is unsafe **by construction**. A crash, a Ctrl-C, or a power cut loses the data outright with no recovery path. A guard that can destroy the thing it guards is worse than no guard, because it is trusted.
+
+*Replacement:* `scripts/clean_clone_check.py` (`make clean-clone-check`) does the honest thing — it **clones** the repository to a temp directory and runs the fast suite there. Nothing in the working tree is read, written, hidden or moved, so there is nothing to lose and nothing to restore. It reuses this repository's virtualenv instead of calling `make setup`, so it costs about the same as `make check` rather than an extra 14 minutes of pip; it still catches missing-source failures because the clone's own `src/` is what gets imported. The original `check_pristine.py` is deleted, not kept, and the deleted tool is documented here so it is not rebuilt.
+
+*The static guard is kept, but described honestly.* `test_no_test_depends_on_a_gitignored_repository_artifact` uses the AST to reject string literals naming an ignored directory, skipping docstrings so that the two files which *explain* the correct pattern are not punished. It was mutation-tested and **does not catch R52** — because R52 names a tracked file, not an ignored one. It catches a narrower, real class (a test hardcoding an ignored path) and costs nothing, so it stays, but it is not the guard for R52. The clone is.
+
+*General lesson, recorded because this project is about honesty before results:* the temptation was to ship a tool whose net effect on the repo was "green tests, and the smoke folder is empty". That is precisely the shape of the failure this project exists to catch — a result that looks fine because the thing that would contradict it got quietly removed.
+
 ---
 
 ## 3. Open questions (agent: do not block on these; use the stated default)

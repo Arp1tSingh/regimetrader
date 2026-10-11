@@ -20,7 +20,7 @@ else
   SMOKE_CLEAN := rm -rf data/warehouse/smoke.db data/raw_smoke data/processed_smoke models_smoke reports_smoke logs_smoke config/frozen_config.smoke.yaml
 endif
 
-.PHONY: setup lint format check test smoke etl-full features regime train backtest final-test paper dashboard clean
+.PHONY: setup lint format check clean-clone-check test smoke etl-full features regime train backtest final-test paper dashboard clean
 
 setup:
 	$(BOOTPY) -m venv $(VENV)
@@ -37,6 +37,13 @@ format:
 
 check: lint
 	$(PY) -m pytest -m "not slow" -q
+
+# Run the fast suite against a clean clone, so a test that passes only because of
+# untracked local state gets caught. This is what found R51 (src/models was never
+# committed) and R52 (OLAP CLI tests depending on an untracked smoke database).
+# Non-destructive: it clones to a temp dir and touches nothing in the working tree.
+clean-clone-check:
+	$(PY) scripts/clean_clone_check.py
 
 test:
 	$(PY) -m pytest -q

@@ -254,7 +254,8 @@ def test_the_cli_tests_do_not_depend_on_the_untracked_smoke_warehouse() -> None:
     # SMOKE_CONFIG_PATH cannot trip it.
     offenders = re.findall(r'"--config",\s*SMOKE_CONFIG_PATH', body)
     assert not offenders, (
-        f"an OLAP CLI call is still pointed at the untracked data/warehouse/smoke.db: {offenders}"
+        "an OLAP CLI call is still pointed at the gitignored smoke warehouse "
+        f"instead of the tmp one: {offenders}"
     )
 
 
