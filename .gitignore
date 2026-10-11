@@ -1,30 +1,40 @@
 # environments
-.venv/
+# `.venv/` and the cache directories are anchored to the repo root so that a directory
+# of the same name nested inside src/ or tests/ can never be silently excluded.
+# `__pycache__/` is deliberately LEFT unanchored: it exists at every depth
+# (src/etl/__pycache__, tests/__pycache__, ...) and must be ignored at all of them.
+# `tests/test_repo_hygiene.py` enforces the first rule and exempts the second.
+/.venv/
 __pycache__/
 *.pyc
-.pytest_cache/
-.ruff_cache/
+/.pytest_cache/
+/.ruff_cache/
 
-# data and models (large or regenerable)
-data/raw/
-data/raw_smoke/
-data/external/
-data/processed/
-data/processed_smoke/
-data/warehouse/
+# Data and models (large or regenerable)
+#
+# These are anchored with a leading "/" on purpose. An unanchored "models/" matches a
+# directory named "models" at ANY depth, which silently excluded `src/models/` — the
+# classifier training module — from the repository. A clean clone could not import it,
+# so `make check` and `make smoke` both failed. Found by the T10.2 clean-clone check.
+/data/raw/
+/data/raw_smoke/
+/data/external/
+/data/processed/
+/data/processed_smoke/
+/data/warehouse/
 *.db
 *.db-wal
 *.db-shm
-models/
-models_smoke/
+/models/
+/models_smoke/
 *.joblib
 
-# logs and smoke outputs
-logs/
-logs_smoke/
-reports_smoke/
-config/frozen_config.smoke.yaml
-reports/daily/
+# Logs and smoke outputs
+/logs/
+/logs_smoke/
+/reports_smoke/
+/config/frozen_config.smoke.yaml
+/reports/daily/
 
 # local secrets
 .env

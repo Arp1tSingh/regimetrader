@@ -48,14 +48,29 @@ cd regimetrader
 make setup
 ```
 
-`make setup` creates `.venv` and installs `requirements.txt`. For an exact reproduction of
-the environment these results were produced in, `requirements.lock` pins all 70 installed
-packages:
+`make setup` creates `.venv` and installs `requirements.txt`. For the exact environment
+these results were produced in, `requirements.lock` pins all 70 installed packages:
 
 ```bash
 .venv/Scripts/python.exe -m pip install -r requirements.lock   # Windows
 .venv/bin/python -m pip install -r requirements.lock           # Linux / macOS
 ```
+
+**`make setup` does not reproduce the lock exactly, and that is expected.**
+`requirements.txt` states minimum versions (`>=`), so a fresh install resolves newer
+transitive dependencies than the ones this project was built against. In the clean-clone
+check four of the 70 differed:
+
+| package | `requirements.lock` | fresh `make setup` |
+|---|---|---|
+| narwhals | 2.26.0 | 2.27.1 |
+| platformdirs | 4.12.4 | 4.13.0 |
+| soupsieve | 2.10 | 3.0.1 |
+| numpy | 2.5.3 | 2.5.4 |
+
+Use `requirements.lock` when you want the environment the reported numbers came from. Use
+`make setup` when you want a working environment. The clean-clone check described in §7
+runs the fast suite against the newer set; see that section for the result.
 
 The real-data pipeline needs network access (yfinance). **Tests and `make smoke` never
 do.**

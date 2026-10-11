@@ -164,6 +164,18 @@ Two things follow, and they must not be conflated.
 
 *Why this is recorded:* a documented command that does not run is a defect **no green test suite will find**, because the suite never exercises the documented entry point — in this case the test suite, the smoke run and the Phase 7 verification had all passed while both commands were broken. Writing the handoff is what exposed it. It also corrects the handoff README: `make paper` runs an incremental ETL first and therefore **does need network**, which an earlier draft of the command table wrongly said it did not.
 
+**R51. `src/models/` was never in the repository; a clean clone could not import it.** *2026-10-11.* Found by the T10.2 clean-clone check — the first thing the handoff did that no previous phase had done. The clone failed `make check` and `make smoke` at collection with `ModuleNotFoundError: No module named 'src.models'`. **All six files of the classifier training module** (`train.py`, `evaluate.py`, `factory.py`, `preprocessing.py`, `diagnostics.py`, `__init__.py`, 995 lines) were absent from every commit since Phase 4.
+
+*Root cause:* the shipped `.gitignore` contained the unanchored pattern `models/`. Git applies such a pattern at **any** depth, so it matched `src/models/` as surely as the root-level model binaries. Two consequences compounded it: (1) the files were never committed; (2) **ruff respects `.gitignore` by default**, so `make lint` never saw them either — they were unformatted and unlinted for the life of the project. The first symptom was a lint sweep over `src/models/` that reformatted 6 files and fixed 7 errors, none of which had ever been reported.
+
+*Why nothing caught it:* **502 tests passed, `make smoke` passed, and every phase gate passed — all inside the working directory, which had the files.** The working directory cannot detect its own absence from version control. Only a clone can, which is exactly what T10.2 is for. This is the strongest argument in the project for the clean-clone check, and it retroactively justifies the BUILD_PLAN making it a numbered task rather than an optional extra.
+
+*Fix:* every directory pattern in `.gitignore` is now anchored with a leading `/` — `/models/`, `/data/warehouse/`, `/logs/`, `/.venv/` and so on. `__pycache__/` is deliberately **left unanchored**, because it exists at every depth (`src/etl/__pycache__`, `tests/__pycache__`) and every instance must be ignored; anchoring it would leak build artefacts. A full sweep confirmed `src/models/` was the **only** wrongly-ignored source directory; everything else excluded was raw CSVs, logs, smoke outputs, model binaries and the panel parquet, all correctly untracked.
+
+*Guard:* `tests/test_repo_hygiene.py` (4 tests) shells out to git on purpose — it is the only check in the suite that inspects the repository rather than the code. It asserts every source file is tracked, that no source file is matched by `.gitignore`, that directory patterns are anchored (with an explicit, reasoned exemption list), and that no tracked file has vanished from disk. The anchoring rule was written first and immediately caught two more unanchored patterns, `.venv/` and `__pycache__`, and the author had to decide deliberately which of the two was wrong.
+
+*Honest note:* the six files were re-formatted, which is a cosmetic change only. `tests/test_models.py`, `tests/test_diagnostics.py` and `tests/test_tune.py` (69 tests) were re-run afterwards and pass. No logic, threshold, seed or metric was altered, and no result changes.
+
 ---
 
 ## 3. Open questions (agent: do not block on these; use the stated default)
