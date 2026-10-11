@@ -1,3 +1,1 @@
-"""Streamlit dashboard (Phase 8)."""
-
-__all__: list[str] = []
+"""Dashboard (`spec 02` section 6). Read-only screens over the warehouse."""

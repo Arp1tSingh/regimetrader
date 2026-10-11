@@ -59,7 +59,7 @@ to within 1e-16. Source file: `yearly_test_all_runs_DERIVED.csv`.
 |---|---|---|---|---|---|---|
 | 2024 | **+19.39%** | +8.47% | +19.65% | +16.99% | +13.56% | +27.41% |
 | 2025 | **+17.94%** | +9.97% | +12.91% | +4.35% | +19.28% | +21.99% |
-| 2026 (to 10-09) | **-17.52%** | -13.77% | -6.39% | -6.65% | -3.87% | -13.66% |
+| 2026 (to 10-09) | **−17.52%** | −13.77% | −6.39% | −6.65% | −3.87% | −13.66% |
 
 The per-year picture sharpens the headline rather than softening it. The strategy's
 full-period win over buy-and-hold came almost entirely from 2024 and 2025. **In 2026 it

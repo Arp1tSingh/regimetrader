@@ -6,7 +6,7 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 
 ## Current position
 
-- Phase: 7 **complete** (T7.1-T7.5). **Phase 8 not started.**
+- Phase: 8 **complete** (T8.1-T8.2). **Phase 9 (stretch) and Phase 10 (handoff) not started.**
 - Next task: **stopped and waiting for the human**
 - Last gate passed: **P6** (`make check && make smoke` with the paper replay wired in). Phases 3-7 complete.
 - Test count: **452 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **480 total** with the slow set.
@@ -72,6 +72,89 @@ This is **not** because cash inflates Sharpe — Sharpe is a ratio and exposure 
 ### Expected outcome, restated
 
 > **The strategy trails buy-and-hold on return (4.6% against 19.5%) and on Sharpe against two of the three baselines. Drawdown looks better than buy-and-hold, but on one trade.**
+
+## 2026-10-11 — Phase 8 complete: the dashboard (T8.1-T8.2)
+
+**The dashboard is read-only and recomputes nothing.** Every figure it shows comes from a
+CSV or warehouse table an authorised run already wrote, so a number on screen cannot
+drift from the same number in `RESULTS.md` (R47). It writes nothing, and tests assert
+that `src.dashboard` never imports `src.models.train`, `src.backtest.tune` or
+`src.backtest.final_test`.
+
+| Task | What was built |
+|---|---|
+| T8.1 | `src/dashboard/data.py` (every query a `SELECT`) and `src/dashboard/app.py` with the five screens from `02§6`: market overview, OLAP explorer, today's signals, backtest results, model diagnostics. Stale-data banner on every screen; `RT_DASH_CONFIG` selects the config so the smoke warehouse can be exercised without editing a file |
+| T8.2 | Empty-state handling on all five screens, **verified against a real warehouse built with the schema applied and zero rows** — not a mocked frame |
+
+**Verification.** `streamlit run` serves HTTP 200 with health `ok`. All five screens
+render headlessly under `streamlit.testing.v1.AppTest` against **both** the smoke and the
+real warehouse with no exception on any screen. `scripts/dashboard_pages.py` prints what
+each page actually renders.
+
+| screen | smoke | real |
+|---|---|---|
+| Market overview | 2 charts (index coloured by regime, India VIX) | 2 charts |
+| OLAP explorer | 1 heat map + drill-down table | 1 heat map + drill-down table |
+| Today's signals | paper disclaimer + "no decision stored yet" | same |
+| Backtest results | 0 charts, "No `summary_test.csv` yet" | **3 charts** (Sharpe CI, equity, drawdown), 2 tables, 3 sections |
+| Model diagnostics | 2 charts, 1 table | 2 charts, 1 table |
+
+The stale banner fires on smoke because the synthetic data ends 2025-06-30. That is the
+banner working, not a fault.
+
+**A spec gap found while verifying and fixed.** The OLAP screen was first built as a
+sector-by-**year** table of `AVG(close_price)`. `02§6` asks for a **sector-by-quarter heat
+map** with **year and regime** filters, and ranking sectors on average price is not a
+return at all — a sector whose average close is high is not thereby a good sector. It now
+plots `fact_indicator.return_1d` (mean daily return %) over **15 sectors x 48
+year-quarters** with year, quarter and regime filters and a sector -> stock drill-down.
+The chart is centred on zero (`zmid=0.0`), so red and green are symmetric.
+
+**The honesty requirements are enforced by tests, not by good intentions** (R49):
+- every registered run must appear as a trace on the equity chart — a chart that quietly
+  dropped B1 or the 2026 drawdown would be a test failure, not a judgement call;
+- the chart source may not contain `tail(`, `head(`, `[-90:` or `iloc[-`, so no window can
+  be trimmed to flatter the strategy;
+- the caveats render as text **on the screen**: intervals crossing zero, V1 beating V2,
+  the cost drag, the B4 turnover asymmetry (R44), the +0.0001 classifier edge (R36), and
+  the untested alternative explanation.
+
+**Per-year baseline returns, now derived (authorised, read-only).** `yearly_test.csv` has
+no baseline rows, so the years below were derived from the equity the authorised run had
+already stored in `fact_portfolio_daily`. **No rescore, no rerun, no write to the
+warehouse.** A hard gate re-derives all eighteen full-period figures and compares them
+with `summary_test.csv`; the script writes nothing unless all eighteen match to 1e-9.
+They matched to ~1e-17 (R46).
+
+| year | V2 | B1 `^NSEI` | B2 | B3 | V1 | V2 no costs |
+|---|---|---|---|---|---|---|
+| 2024 | **+19.39%** | +8.47% | +19.65% | +16.99% | +13.56% | +27.41% |
+| 2025 | **+17.94%** | +9.97% | +12.91% | +4.35% | +19.28% | +21.99% |
+| 2026 (to 10-09) | **−17.52%** | −13.77% | −6.39% | −6.65% | −3.87% | −13.66% |
+
+**The derivation made the result worse, not better.** The strategy's full-period win came
+almost entirely from 2024-2025; in 2026 it was the worst of every run shown. That is now
+in `RESULTS.md` and on the dashboard.
+
+**The Phase 7 R26 bug now has a regression test, and the guard moved to the writer.**
+`test_the_daily_job_never_writes_fact_signal_up_to_the_lock_date` reproduces the exact
+situation — indicators extended to a date equal to the lock's `data_end_date` — and
+asserts no row appears, including when the date is requested explicitly. The check also
+moved **into `ensure_inputs`**, the function that actually writes the row, so it raises
+`PermissionError` regardless of who calls it (R48). A guard at the entry point protects
+one caller; a guard at the write protects the invariant.
+
+**Nothing about the test period moved.** Every Phase 6 output is byte-identical to the
+committed version, `frozen_config.yaml` still hashes to `0b8c88c6…63b8`, and the lock
+still reads `run_count` 2, `data_end_date` 20261009. Warehouse row counts unchanged
+(`fact_portfolio_daily` 4,795 = 7 runs x 685 days; `fact_signal` 184,976 with max date
+20261008).
+
+**20 dashboard tests** in `tests/test_dashboard.py`, including two that enforce rule 6:
+the dashboard may not contain a hardcoded date key (`20[23]ddddd`) or a hardcoded index
+symbol, so a future change to `cfg['splits']` cannot leave the screen showing the old
+split. That test caught a real instance while being written — the `B1 buy and hold ^NSEI`
+label — which is now built from `cfg['data']['index_symbol']` by `dd.result_labels()`.
 
 ## 2026-10-11 — Phase 7 complete: paper trading (T7.1-T7.5)
 
@@ -374,7 +457,17 @@ Two things to weigh before Phase 6, neither of which blocks it:
 | 2026-10-11 | **T7.4** | `src/paper/report.py` writes `reports/daily/<date>.md` with regime, equity, drawdown, held positions, today's fills and tomorrow's orders, and a disclaimer that paper trading is not evidence of performance. `deploy/cron.example` and `deploy/github_actions_daily.yml` written; **nothing installed** (R22). Both carry the warning that a SQLite file is lost on an ephemeral runner. |
 | 2026-10-11 | **T7.5** | `make smoke` passes end to end with the paper replay wired in, writing `reports_smoke/daily/2022-04-29.md`. **`paper_live` run on the real warehouse: exit 0.** It starts flat at 2026-10-09, declines to process it because that is the lock's `data_end_date`, and logs "nothing to do". **No trades were committed, and that is the honest outcome** — the test already covered through 2026-10-09 and no later trading day exists. |
 | 2026-10-11 | T7.4 | **`README.md` and this file now state plainly that paper trading demonstrates the system operates, not that it makes money**, and that paper P&L must not be reported as performance evidence. |
-| 2026-10-11 | T7.2 | **Per-year B1 and B2 returns were not added to the Phase 6 report.** `yearly_test.csv` contains only `backtest_main` — it has no baseline rows — so the figures cannot be read from it. Recorded in `RESULTS.md` instead. The daily equity for all seven test runs does still sit in `fact_portfolio_daily`, so they could be **derived** with no rescore, but that was not authorised and was not done. |
+| 2026-10-11 | T7.2 | **Per-year B1 and B2 returns were not added to the Phase 6 report.** `yearly_test.csv` contains only `backtest_main` — it has no baseline rows — so the figures cannot be read from it. Recorded in `RESULTS.md` instead. The daily equity for all seven test runs does still sit in `fact_portfolio_daily`, so they could be **derived** with no rescore, but that was not authorised and was not done. **Superseded the same day — see the T8.1 log entry below.** |
+| 2026-10-11 | **T8.1** | **Per-year baselines derived from stored equity, authorised by the human.** Read-only: no rescore, no rerun, no warehouse write, no change to any Phase 6 output (all byte-identical to the committed versions). A hard gate re-derives all eighteen full-period Sharpe/CAGR/maxDD figures from the stored equity and compares them with `summary_test.csv`; nothing is written unless all eighteen match to 1e-9. **All eighteen matched to ~1e-17.** Result (`yearly_test_all_runs_DERIVED.csv`): 2024 V2 +19.39%, 2025 +17.94%, **2026 (to 10-09) -17.52% — the worst of every run**, against B1 -13.77% and B2 -6.39%. The derivation made the result worse, and `RESULTS.md` says so. DECISIONS R46. |
+| 2026-10-11 | **T8.1** | **R26 regression test, and the guard moved to the writer.** `test_the_daily_job_never_writes_fact_signal_up_to_the_lock_date` reproduces the exact Phase 7 situation — indicators extended to a date equal to the lock's `data_end_date` — and asserts no `fact_signal` row appears, including when that date is requested explicitly. The check also now lives **inside `ensure_inputs`**, the function that writes the row, so it raises `PermissionError` no matter who calls it. DECISIONS R48. |
+| 2026-10-11 | **T8.1** | `src/dashboard/data.py` and `src/dashboard/app.py`: the five screens from `02§6`, read-only (`SELECT` only), stale-data banner, `RT_DASH_CONFIG` so smoke data can be exercised without editing a file. **The dashboard recomputes no metric** — every figure is read from a stored CSV or table, so a number on screen cannot drift from `RESULTS.md`. Tests assert `src.dashboard` never imports `train`, `tune` or `final_test`. DECISIONS R47. |
+| 2026-10-11 | **T8.1** | **Honesty requirements enforced by tests, not intent** (R49): every registered run must appear as a trace on the equity chart; the chart source may not contain `tail(`, `head(`, `[-90:` or `iloc[-`, so no window can be trimmed to flatter the strategy; and the caveats render as text **on the screen** — intervals crossing zero, V1 beating V2, the cost drag, the B4 turnover asymmetry (R44) and the +0.0001 classifier edge (R36). |
+| 2026-10-11 | **T8.2** | Empty-state handling verified against a **real empty warehouse** (schema applied, zero rows), not a mocked frame, as the acceptance requires. All five screens render with no exception and each states what is missing. |
+| 2026-10-11 | **T8.1-T8.2** | **Verified by launching it.** `streamlit run` serves HTTP 200 with health `ok`; all five screens render headlessly under `AppTest` against **both** the smoke and the real warehouse with no exception. `scripts/dashboard_pages.py` prints what each page renders: 2 charts on market overview, 3 charts + 2 tables + 3 sections on backtest results (real), 2 charts on model diagnostics. The stale banner fires on smoke because the synthetic data ends 2025-06-30 — that is the banner working. |
+| 2026-10-11 | T8.1 | **Three defects found while verifying, all fixed with a test.** (a) Feature importance read `<model>.joblib` but the trainer writes `<model>_wf<year>.joblib`, and the pipeline's winsorizer cannot report feature names via `get_feature_names_out`, so the names now come from `get_feature_cols` — the same list training used. (b) `Pipeline.steps` holds `(name, estimator)` pairs, so `steps[-1]` is a tuple and the model was never found. (c) `use_container_width` is deprecated in Streamlit 1.65 and will be removed; replaced with `width='stretch'`. |
+| 2026-10-11 | T8.1 | **Rule 6 violation found by its own test: the dashboard held hardcoded dates and symbols.** The diagnostics screen hardcoded `20240101` / `20231231` for the probability windows, and `data.py` hardcoded `^INDIAVIX` and the `^NSEI` in a run label. All now read from `cfg['splits']` and `cfg['data']`, and a test greps both modules so the literals cannot come back. |
+| 2026-10-11 | T8.1 | **Spec gap fixed:** the OLAP screen was a sector-by-year table of average **price**; `02§6` requires a sector-by-**quarter heat map** with year and regime filters. Rebuilt on `fact_indicator.return_1d`, 15 sectors x 48 year-quarters, centred on zero. Ranking sectors on average close would have been a price chart wearing a heat map's clothes. |
+| 2026-10-11 | T8.2 | **Integrity re-verified after the dashboard work.** Every Phase 6 output byte-identical to the committed version; `frozen_config.yaml` still hashes to `0b8c88c6…63b8`; `TEST_RUN_LOCK.json` still `run_count` 2 / `data_end_date` 20261009; `fact_portfolio_daily` 4,795 rows (7 x 685), `fact_signal` 184,976 with max date **20261008**, `pending_target` 0. Nothing about the test period moved. |
 | 2026-10-11 | tests | **452 fast tests, 480 total** (up from 436/462). Two of my own assertions were wrong and were corrected: one compared holdings against *all* traded symbols rather than the open ones, and one expected a rolled-back date to keep the final cash rather than reverting to the previous date's. |
 | 2026-10-11 | **T6.2** | **The run crashed once and completed under `run_count` 2.** First invocation scored the strategy, ablations, baselines and classifiers, then crashed in B4: `b4_distribution` called `run_backtest` without `allow_test_period=True`, so the guard raised `ValueError`. Reported and held rather than re-run. The fix was one keyword parameter defaulting to `False`. **All six outputs checksummed before the rerun were bit-identical afterwards.** |
 | 2026-10-11 | **T6.2** | **Test results: beat buy-and-hold on Sharpe (0.485 vs 0.158) and CAGR (0.055 vs 0.012); lost on drawdown (0.193 vs 0.156).** Lost to B2 on all three and to B3 on Sharpe and drawdown. **Every CI crosses zero, including the strategy's own.** |
@@ -441,7 +534,7 @@ Two things to weigh before Phase 6, neither of which blocks it:
 **Gate P4:** `make check && make smoke`. **PASSED** — 352 fast tests, 373 total.
 **Phase 6 Final evaluation:** [x] T6.1 [x] T6.2 [x] T6.3 [x] T6.4
 **Phase 7 Paper trading:** [x] T7.1 [x] T7.2 [x] T7.3 [x] T7.4 [x] T7.5
-**Phase 8 Dashboard:** [ ] T8.1 [ ] T8.2
+**Phase 8 Dashboard:** [x] T8.1 [x] T8.2
 **Phase 9 Stretch:** [ ] T9.1 [ ] T9.2 [ ] T9.3 [ ] T9.4
 **Phase 10 Handoff:** [ ] T10.1 [ ] T10.2 [ ] T10.3 [ ] T10.4
 
