@@ -46,18 +46,26 @@ daily returns, block 10 days, 1,000 resamples, seed 42.
 | 2025 | 249 | +17.94% | 1.7356 | 0.0467 |
 | 2026 (to 10-09) | 190 | **−17.52%** | −1.7241 | 0.1932 |
 
-**Per-year B1 and B2 returns are not available in `yearly_test.csv` and are therefore
-not reported here.** That file was written from the frozen strategy's equity curve only
-and contains no baseline rows, so the figures cannot be read from it. Nothing was
-rescored or recomputed to fill the gap.
+**Per-year returns for every run, derived from stored equity curves.**
 
-For the record: the underlying daily equity for all seven test runs *was* persisted
-during the authorised run and still sits in `fact_portfolio_daily` (685 rows per run,
-`test_B1` and `test_B2` included), so per-year baseline returns could be **derived**
-from it with no rescore and no rerun. That derivation has not been done, because it
-would produce new numbers rather than report existing ones, and that was not authorised.
+`yearly_test.csv` contained only the strategy, so the baseline years below were
+**derived** from the daily equity the authorised run had already persisted in
+`fact_portfolio_daily`. Nothing was rescored and nothing was rerun. Before writing
+the table, every run's **full-period** CAGR, Sharpe and max drawdown were re-derived from
+the same stored equity and compared with `summary_test.csv`: all eighteen figures agreed
+to within 1e-16. Source file: `yearly_test_all_runs_DERIVED.csv`.
 
----
+| year | V2 strategy | B1 `^NSEI` | B2 equal weight | B3 trend | V1 regime only | V2 no costs |
+|---|---|---|---|---|---|---|
+| 2024 | **+19.39%** | +8.47% | +19.65% | +16.99% | +13.56% | +27.41% |
+| 2025 | **+17.94%** | +9.97% | +12.91% | +4.35% | +19.28% | +21.99% |
+| 2026 (to 10-09) | **-17.52%** | -13.77% | -6.39% | -6.65% | -3.87% | -13.66% |
+
+The per-year picture sharpens the headline rather than softening it. The strategy's
+full-period win over buy-and-hold came almost entirely from 2024 and 2025. **In 2026 it
+was the worst of every run shown**, losing 17.5% where B2 lost 6.4% and buy-and-hold
+lost 13.8%. One year of that size moves the full-period Sharpe more than the whole
+2024-2025 advantage, which is a plain statement of how unstable the difference is.
 
 ## 2. What must be said about these numbers
 

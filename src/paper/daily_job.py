@@ -143,6 +143,17 @@ def ensure_inputs(cfg: dict[str, Any], engine: Any, date_key: int, model: str) -
     if int(have["n"].iloc[0]) > 0:
         return
 
+    # R26 guard, enforced here as well as in `run`: this function is what writes
+    # fact_signal, so it must refuse a locked date itself rather than trusting the
+    # caller. Regression test: test_the_daily_job_never_writes_fact_signal_up_to_the_lock_date.
+    if cfg["paper"].get("run_id") and not signal_dates_allowed(
+        cfg, str(cfg["paper"]["run_id"]), date_key
+    ):
+        raise PermissionError(
+            f"refusing to write fact_signal for {date_key}: it is on or before the test "
+            "lock's data_end_date (DECISIONS R26)"
+        )
+
     log = get_logger("src.paper.daily_job", cfg)
 
     # (c) Indicators, recomputed from the full history.

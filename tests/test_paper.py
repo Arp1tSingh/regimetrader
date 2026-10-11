@@ -82,6 +82,81 @@ def test_only_paper_live_may_write_fact_signal(cfg_smoke: dict[str, Any]) -> Non
     assert signal_dates_allowed(cfg_smoke, "paper_live", 20230103) is True
 
 
+@pytest.mark.slow
+def test_the_daily_job_never_writes_fact_signal_up_to_the_lock_date(
+    signals_ready: tuple,
+) -> None:
+    """Regression for the Phase 7 bug: paper_live wrote fact_signal at data_end_date.
+
+    On the first real run the job extended indicators, regime and probabilities to the
+    latest trading date, which happened to be exactly the lock's `data_end_date` — the
+    one date R26 forbids a live run from writing. This runs the job against that
+    situation and asserts the row was not created.
+    """
+    import src.paper.daily_job as job
+    from src.common.db import read_sql
+
+    cfg_obj, engine = signals_ready
+    lock_date = 20230103
+    results = Path(cfg_obj["paths"]["results"])
+    results.mkdir(parents=True, exist_ok=True)
+    (results / "TEST_RUN_LOCK.json").write_text(
+        json.dumps({"run_count": 1, "data_end_date": str(lock_date)}), encoding="utf-8"
+    )
+    cfg_obj = {
+        **cfg_obj,
+        "paper": {**cfg_obj["paper"], "run_id": "paper_live"},
+        "strategy": {**cfg_obj["strategy"], "selected_model": "tree"},
+    }
+
+    def max_signal_date() -> int:
+        return int(read_sql(engine, "SELECT MAX(date_key) AS m FROM fact_signal")["m"].iloc[0])
+
+    before = max_signal_date()
+
+    # A date on or before the lock must be refused outright.
+    assert signal_dates_allowed(cfg_obj, "paper_live", lock_date) is False
+
+    outcome = job.run(cfg_obj, run_id="paper_live", no_etl=True)
+    assert outcome["processed"] == [], "no date may be processed at or before the lock"
+    assert max_signal_date() == before, (
+        "paper_live must not extend fact_signal to the lock's data_end_date"
+    )
+
+    # Even when asked to process that date explicitly, nothing is written.
+    with engine.begin() as conn:
+        conn.exec_driver_sql("DELETE FROM fact_portfolio_daily WHERE run_id = 'paper_live'")
+    job.run(cfg_obj, run_id="paper_live", from_key=lock_date, to_key=lock_date, no_etl=True)
+    assert max_signal_date() == before, "asking for the locked date must not cause a write either"
+
+    (results / "TEST_RUN_LOCK.json").unlink(missing_ok=True)
+    with engine.begin() as conn:
+        for table in ("fact_trade", "fact_portfolio_daily", "pending_target"):
+            conn.exec_driver_sql("DELETE FROM {} WHERE run_id='paper_live'".format(table))
+
+
+def test_ensure_inputs_refuses_a_date_it_may_not_write(
+    signals_ready: tuple,
+) -> None:
+    """`ensure_inputs` is the step that writes signals, so it must check R26 first."""
+    import src.paper.daily_job as job
+
+    cfg_obj, engine = signals_ready
+    results = Path(cfg_obj["paths"]["results"])
+    results.mkdir(parents=True, exist_ok=True)
+    (results / "TEST_RUN_LOCK.json").write_text(
+        json.dumps({"run_count": 1, "data_end_date": "20991231"}), encoding="utf-8"
+    )
+    # A lock far in the future makes every date disallowed.
+    assert signal_dates_allowed(cfg_obj, "paper_live", 20230103) is False
+
+    source = Path(job.__file__).read_text(encoding="utf-8")
+    assert "signal_dates_allowed" in source, (
+        "ensure_inputs must consult signal_dates_allowed before writing fact_signal"
+    )
+    (results / "TEST_RUN_LOCK.json").unlink(missing_ok=True)
+
+
 # --------------------------------------------------------------- store round trip
 
 
