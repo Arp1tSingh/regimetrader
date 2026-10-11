@@ -77,6 +77,7 @@ def b4_distribution(
     sims: int | None = None,
     model: str,
     log: Any = None,
+    allow_test_period: bool = False,
 ) -> pd.DataFrame:
     """Run B4 and return one row per simulation.
 
@@ -93,10 +94,12 @@ def b4_distribution(
         sims: Override for `backtest.random_baseline_sims`.
         model: The model whose probabilities are permuted.
         log: Optional logger.
+        allow_test_period: Only `final_test.py` sets this. Defaults to False, so a B4
+            run anywhere else still hits the test-period guard.
 
     Returns:
         Columns `sim`, `sharpe`, `cagr`, `max_drawdown`, `n_trades`, `turnover`,
-        `exposure`, `tie_break_share`, `traded`.
+        `exposure`, `weight_exposure`, `tie_break_share`, `traded`.
     """
     from sqlalchemy import text
 
@@ -184,6 +187,7 @@ def b4_distribution(
                 engine=engine,
                 model_name=perm_model,
                 persist=False,
+                allow_test_period=allow_test_period,
             )
             metrics = summarize(outcome.equity, outcome.trades, cfg)
             rows.append(

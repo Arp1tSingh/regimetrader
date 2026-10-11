@@ -269,6 +269,8 @@ def run_b4_test(cfg: dict[str, Any], engine: Any, start: str, end: str) -> pd.Da
         end,
         sims=int(cfg["backtest"]["random_baseline_sims"]),
         model=model,
+        # The only production caller allowed to lift the test-period guard.
+        allow_test_period=True,
     )
 
 

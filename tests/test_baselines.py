@@ -496,6 +496,45 @@ def test_weight_exposure_of_a_real_run_is_finite(signals_ready: tuple) -> None:
     assert 0.0 <= weight_exposure(result.equity) <= 1.0
 
 
+@pytest.mark.slow
+def test_b4_distribution_refuses_the_test_period_outside_final_test(
+    signals_ready: tuple,
+) -> None:
+    """The B4 null must not become a way around the test-period guard.
+
+    `b4_distribution` runs a full backtest per simulation, so without the guard a B4
+    call could score the test period from anywhere in the codebase. The parameter
+    defaults to False precisely so only `final_test.py` can lift it.
+    """
+    from src.backtest.baselines import b4_distribution
+
+    cfg_obj, engine = signals_ready
+    # Put `test_start` before the window so the guard must fire.
+    guarded = {
+        **cfg_obj,
+        "splits": {
+            **cfg_obj["splits"],
+            "test_start": "2000-01-01",
+            "validation_start": "2018-01-01",
+            "validation_end": "2022-12-30",
+        },
+    }
+
+    with pytest.raises(ValueError, match="test period"):
+        b4_distribution(guarded, engine, "2018-01-01", "2022-12-30", sims=1, model="tree")
+
+
+def test_b4_distribution_defaults_to_refusing_the_test_period() -> None:
+    """The default must be False, checked in the signature rather than by running it."""
+    import inspect
+
+    from src.backtest.baselines import b4_distribution
+
+    signature = inspect.signature(b4_distribution)
+    assert "allow_test_period" in signature.parameters
+    assert signature.parameters["allow_test_period"].default is False
+
+
 # --------------------------------------------------------------- equity index
 
 

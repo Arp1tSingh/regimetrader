@@ -248,9 +248,7 @@ def test_smoke_final_test_runs_end_to_end_and_writes_its_outputs(
     frozen = Path(base["paths"]["frozen_config"])
     frozen.parent.mkdir(parents=True, exist_ok=True)
     frozen.write_text(
-        yaml.safe_dump(
-            {"strategy": {"selected_model": "logreg", "entry_base": 0.55, "slots": 5}}
-        ),
+        yaml.safe_dump({"strategy": {"selected_model": "logreg", "entry_base": 0.55, "slots": 5}}),
         encoding="utf-8",
     )
 

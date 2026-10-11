@@ -1,0 +1,33 @@
+strategy:
+  selected_model: rf
+  entry_base: 0.504415
+  slots: 10
+meta:
+  tuned_at: '2026-10-10T12:52:52.421411+00:00'
+  method: activity_and_null_filtered
+  outcome: selected
+  demonstrated_edge: true
+  validation_sharpe: 1.8327502692231457
+  n_trades: 655
+  exposure: 0.9959183673469387
+  threshold_method_per_model:
+    logreg: percentile_p80
+    tree: excluded
+    rf: percentile_p80
+    xgb: absolute
+  excluded_from_tuning:
+    tree: tied share 76.38% exceeds 20%; p95-p50 0.0000 below 0.01
+  activity_filter:
+    min_round_trips: 30
+    min_exposure: 0.1
+    passed: 10
+    of: 18
+  null_filter:
+    sims: 100
+    percentile: 90.0
+    shortlisted: 3
+    passed: 1
+  grid_trials: 18
+  total_logged_trials: 331
+  disclosure: Selection filters R39-R42 were introduced after run 1 produced a degenerate
+    1-trade winner. Run 1 is preserved and still counted.
