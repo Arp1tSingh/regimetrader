@@ -16,7 +16,65 @@ Have open, in this order:
 3. `reports/results/trial_log.csv` — the experiment log
 4. `reports/results/TEST_RUN_LOCK.json` — the one-time-evaluation lock
 
-The dashboard should already be running in a second browser tab (`make dashboard`).
+The dashboard should already be running in a second browser tab, and the tunnel banner
+should already be on screen (see §0).
+
+---
+
+## 0. Before they walk in — start the demo tunnel (2 min, then leave it running)
+
+**Do this before the viva, never during it.** A tunnel that is first attempted in front
+of an examiner is a demo risk.
+
+One-time install, if you have not already:
+
+```bash
+winget install cloudflare.cloudflared
+```
+
+Verify everything without launching anything:
+
+```bash
+make demo-check
+```
+
+It prints `pre-flight OK` if cloudflared is present, the warehouse exists and the results
+CSVs are there. If it says `cloudflared : MISSING`, install it. Do not carry on until this
+passes.
+
+Then start it:
+
+```bash
+make demo
+```
+
+It launches the dashboard and a temporary public tunnel, and prints this:
+
+```
+==========================================================================
+  DEMO IS LIVE - give the examiner this URL
+==========================================================================
+
+    https://some-random-words.trycloudflare.com
+
+  It is random and changes every run. Read it aloud.
+  Local fallback if they cannot reach it: http://localhost:8501
+======================================================================
+```
+
+**The URL is random and different every single run.** It cannot be written down in
+advance and it will not work tomorrow. Read it off the screen and say it out loud. Leave
+the terminal visible.
+
+**Tell them early, before you start talking about results:**
+
+> "I have the dashboard on a temporary public link if you would rather look at it on your
+> own device than on my screen. If it does not load, no problem, I have it here."
+
+That last sentence matters. It means the tunnel failing is not a failure of the demo.
+
+Leave the command running for the whole viva. Press **Ctrl-C** when you are done to shut
+both the tunnel and the dashboard down.
 
 ---
 
@@ -229,9 +287,14 @@ Say:
 
 | Problem | Do this instead |
 |---|---|
+| `make demo-check` says cloudflared MISSING | Install it **now**, not later: `winget install cloudflare.cloudflared`. The script also looks in the standard install folder, so a stale PATH is not the cause. |
+| The tunnel URL will not load for them | Say the sentence you promised: "no problem, I have it here." Switch to the local dashboard. Nobody marks you down for this. |
+| The tunnel did not print a URL | It prints `LOCAL ONLY` and carries on without it. Just use the local dashboard. Do not retry live. |
+| Port 8501 is taken | `make demo` accepts `--port`, or run `.venv/Scripts/python.exe scripts/demo_tunnel.py --port 8502`. |
+| No internet in the exam room | The tunnel never connects. The local dashboard works regardless, because the warehouse is on your machine. This is why the tunnel is additive and never required. |
+| Laptop goes to sleep mid-demo | Turn sleep off in Settings → System → Power before you start. |
 | `make smoke` takes too long | **Do not run it live.** It takes **about 18 minutes**. Open `reports_smoke/results/` and the committed log lines in `docs/build/PROGRESS.md`. Say it passes end to end on synthetic data. |
 | Dashboard will not start | Show `reports/results/RESULTS.md`. Every chart on the dashboard reads the same CSVs. |
-| Port 8501 is busy | `make dashboard` then open the printed URL; or run `streamlit run src/dashboard/app.py --server.port 8502` and say why. |
 | A query is slow on the OLAP screen | Set the year filter to 2024. The heat map only needs one year. |
 | Asked to run the full test suite | **Do not.** It takes ~59 minutes. Say: "503 tests, 468 fast, 35 slow, about an hour. I have the log." Then show `docs/build/PROGRESS.md`. |
 | Asked to re-run the backtest | **Do not.** `make final-test` will refuse — that is the guard working. Show `TEST_RUN_LOCK.json` and explain the protocol. |
@@ -241,6 +304,7 @@ Say:
 
 | Step | Topic | Minutes |
 |---|---|---|
+| 0 | Start the tunnel and leave it running | 2 (before they arrive) |
 | 1 | The claim up front | 1 |
 | 2 | One-time evaluation, `run_count: 2` | 2 |
 | 3 | Results table with baselines | 3 |
@@ -251,3 +315,5 @@ Say:
 | 8 | Dashboard, live system | 1.5 |
 | 9 | Close | 0.5 |
 | | **Total** | **~16 min** |
+
+Step 0 is not part of the 16 minutes — do it beforehand.

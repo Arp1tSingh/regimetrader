@@ -189,6 +189,29 @@ set RT_DASH_CONFIG=config/config.smoke.yaml
 make dashboard
 ```
 
+### Demo mode — a temporary public URL for a viva
+
+```bash
+winget install cloudflare.cloudflared    # once
+make demo-check                          # verify, launches nothing
+make demo                                # dashboard + public tunnel
+```
+
+`make demo` starts the dashboard and a `cloudflared` quick tunnel, then prints the public
+URL in a boxed banner. The examiner can open it on their own device instead of watching
+your screen.
+
+**The URL is random and changes on every run.** It cannot be written down in advance.
+Read it off the screen. `Ctrl-C` stops both processes.
+
+The tunnel is **additive, never required** — the warehouse is on your machine, so the
+local dashboard works with no internet at all. If the link does not load, just show the
+dashboard on your screen. It is read-only by construction (every query in
+`src/dashboard/data.py` is a `SELECT`, asserted by tests), so an examiner poking at it
+cannot alter anything.
+
+`docs/DEMO_SCRIPT.md` has the full 16-minute walkthrough and a fallback table.
+
 ---
 
 ## 4. Reproducing the results

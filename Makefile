@@ -20,7 +20,7 @@ else
   SMOKE_CLEAN := rm -rf data/warehouse/smoke.db data/raw_smoke data/processed_smoke models_smoke reports_smoke logs_smoke config/frozen_config.smoke.yaml
 endif
 
-.PHONY: setup lint format check clean-clone-check test smoke etl-full features regime train backtest final-test paper dashboard clean
+.PHONY: setup lint format check clean-clone-check test smoke etl-full features regime train backtest final-test paper dashboard demo demo-check demo-local clean
 
 setup:
 	$(BOOTPY) -m venv $(VENV)
@@ -88,6 +88,19 @@ paper:
 
 dashboard:
 	$(PY) -m streamlit run src/dashboard/app.py --server.headless true --browser.gatherUsageStats false
+
+# Demo helper: start the dashboard behind a temporary public URL so an examiner can open
+# it on their own device. Needs cloudflared once: `winget install cloudflare.cloudflared`.
+# Verify everything beforehand with `make demo-check` -- do NOT first-run this live.
+# The tunnel URL is random and changes every run; the script prints it.
+demo:
+	$(PY) scripts/demo_tunnel.py
+
+demo-check:
+	$(PY) scripts/demo_tunnel.py --check
+
+demo-local:
+	$(PY) scripts/demo_tunnel.py --no-tunnel
 
 clean:
 	$(CLEAN)
