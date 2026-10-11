@@ -20,7 +20,7 @@ else
   SMOKE_CLEAN := rm -rf data/warehouse/smoke.db data/raw_smoke data/processed_smoke models_smoke reports_smoke logs_smoke config/frozen_config.smoke.yaml
 endif
 
-.PHONY: setup lint format check clean-clone-check test smoke etl-full features regime train backtest final-test paper dashboard demo demo-check demo-local clean
+.PHONY: setup lint format check clean-clone-check test smoke etl-full features regime train backtest final-test paper dashboard demo demo-check demo-local demo-link demo-link-check demo-link-revive clean
 
 setup:
 	$(BOOTPY) -m venv $(VENV)
@@ -101,6 +101,18 @@ demo-check:
 
 demo-local:
 	$(PY) scripts/demo_tunnel.py --no-tunnel
+
+# Publish a temporary public demo URL to the GitHub Release tagged `demo`.
+# The URL is random per tunnel process and dies with it; these report the truth about
+# whether the published link is still up, and replace it if not.
+demo-link:
+	$(PY) scripts/demo_link.py publish
+
+demo-link-check:
+	$(PY) scripts/demo_link.py check
+
+demo-link-revive:
+	$(PY) scripts/demo_link.py revive
 
 clean:
 	$(CLEAN)

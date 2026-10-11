@@ -292,6 +292,7 @@ Say:
 | The tunnel did not print a URL | It prints `LOCAL ONLY` and carries on without it. Just use the local dashboard. Do not retry live. |
 | Port 8501 is taken | `make demo` accepts `--port`, or run `.venv/Scripts/python.exe scripts/demo_tunnel.py --port 8502`. |
 | No internet in the exam room | The tunnel never connects. The local dashboard works regardless, because the warehouse is on your machine. This is why the tunnel is additive and never required. |
+| The published release link is dead | `make demo-link-revive`. It only republishes if the link is actually dead, so it is safe to run at any time. **Do not assume the link is live** — `make demo-link-check` tells you the truth in about 4 seconds. |
 | Laptop goes to sleep mid-demo | Turn sleep off in Settings → System → Power before you start. |
 | `make smoke` takes too long | **Do not run it live.** It takes **about 18 minutes**. Open `reports_smoke/results/` and the committed log lines in `docs/build/PROGRESS.md`. Say it passes end to end on synthetic data. |
 | Dashboard will not start | Show `reports/results/RESULTS.md`. Every chart on the dashboard reads the same CSVs. |

@@ -212,6 +212,28 @@ cannot alter anything.
 
 `docs/DEMO_SCRIPT.md` has the full 16-minute walkthrough and a fallback table.
 
+#### Publishing the link to GitHub
+
+```bash
+make demo-link            # start a tunnel and publish the URL to the `demo` release
+make demo-link-check      # prints ALIVE or DEAD for the published URL
+make demo-link-revive     # republish, but only if the URL is actually dead
+```
+
+The published link lives at
+**https://github.com/Arp1tSingh/regimetrader/releases/tag/demo**
+
+**This cannot be kept alive automatically, and the release says so.** A quick-tunnel
+hostname is random per process: when the process dies the URL is gone permanently, and a
+replacement gets a *different* URL. Nothing here runs a 24-hour watchdog, so if the link
+dies while nobody runs a command, it stays dead. `make demo-link-check` exists so you
+never have to guess which state it is in.
+
+The release body carries its own generated-at time, the liveness command, and the line
+*"A dead link in this section is expected behaviour, not a fault in the project."* That
+is deliberate: a link that quietly rots into looking authoritative is the exact failure
+this project exists to catch.
+
 ---
 
 ## 4. Reproducing the results
