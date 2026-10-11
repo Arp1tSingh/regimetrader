@@ -84,6 +84,7 @@ Every command below was run in the session that produced this handoff.
 | What | Command | Network? |
 |---|---|---|
 | Lint + fast tests | `make check` | no |
+| **Same tests, in a clean clone** | `make clean-clone-check` | no |
 | Full test suite | `make test` | no |
 | **Whole pipeline on synthetic data** | `make smoke` | no |
 | Daily paper job | `make paper` | **yes** — runs an incremental ETL first |
@@ -98,6 +99,21 @@ Every command below was run in the session that produced this handoff.
 `make smoke` is the single command that proves the whole system works end to end: ETL,
 indicators, OLAP, regimes, training, tuning, baselines and a paper replay, all on
 generated data.
+
+### `make clean-clone-check` — run this after any commit
+
+`make check` can be green in your working directory and fail for anyone who clones the
+repository, because your directory holds state the repo does not. That happened **twice**
+here: the entire `src/models/` package was silently excluded by an over-broad
+`.gitignore` pattern, and three tests passed only because a 16 MB smoke database was
+lying around from earlier runs. Neither is visible from inside the working directory.
+
+This target clones the repository to a temp directory and runs the fast suite there.
+It **reads, writes and moves nothing** in your working tree, and reuses your existing
+virtualenv, so it costs about the same as `make check` (≈33 min) rather than a fresh
+`pip install`. Last verified run: **475 passed, 35 deselected, 0 failed** in 32m42s.
+
+Run it before you trust a green `make check`.
 
 `make paper` runs an **incremental** load before trading, so it needs network. To skip
 that and run against data already in the warehouse, call the job directly with
