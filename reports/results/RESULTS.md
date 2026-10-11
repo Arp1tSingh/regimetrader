@@ -46,6 +46,17 @@ daily returns, block 10 days, 1,000 resamples, seed 42.
 | 2025 | 249 | +17.94% | 1.7356 | 0.0467 |
 | 2026 (to 10-09) | 190 | **−17.52%** | −1.7241 | 0.1932 |
 
+**Per-year B1 and B2 returns are not available in `yearly_test.csv` and are therefore
+not reported here.** That file was written from the frozen strategy's equity curve only
+and contains no baseline rows, so the figures cannot be read from it. Nothing was
+rescored or recomputed to fill the gap.
+
+For the record: the underlying daily equity for all seven test runs *was* persisted
+during the authorised run and still sits in `fact_portfolio_daily` (685 rows per run,
+`test_B1` and `test_B2` included), so per-year baseline returns could be **derived**
+from it with no rescore and no rerun. That derivation has not been done, because it
+would produce new numbers rather than report existing ones, and that was not authorised.
+
 ---
 
 ## 2. What must be said about these numbers

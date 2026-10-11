@@ -1,0 +1,68 @@
+# RegimeTrader daily job — example GitHub Actions schedule. NOT INSTALLED (DECISIONS R22).
+#
+# The agent writes this file; installing the workflow in a repository is the human's
+# decision. Commit it and enable it in the Actions tab when you want it to run.
+#
+# ---------------------------------------------------------------------------
+# WARNING: this project stores its state in a SQLite file, and a GitHub Actions runner
+# starts from a clean disk. The warehouse WILL be lost at the end of every run unless
+# you do one of the following:
+#
+#   (a) cache/restore and save data/warehouse/regimetrader.db as an artifact, or
+#   (b) commit the database to the repository on every run (simple, but bloats history), or
+#   (c) move the project to PostgreSQL, which is the right answer for real operation.
+#
+# Do not enable this workflow with the SQLite file on ephemeral storage. The paper job
+# rebuilds all of its state from the warehouse, so a lost warehouse means a lost run
+# history and a run that restarts flat.
+# ---------------------------------------------------------------------------
+#
+# Cron in Actions is UTC. 17:00 IST is 11:30 UTC.
+
+name: RegimeTrader daily paper job
+
+on:
+  schedule:
+    # 11:30 UTC = 17:00 Asia/Kolkata, weekdays.
+    - cron: "30 11 * * 1-5"
+  workflow_dispatch: # allows a manual run from the Actions tab
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Replace this with (a), (b) or (c) before enabling the schedule.
+      # As shipped it deliberately does NOT restore a warehouse, so the job below will
+      # refuse to run a live paper job with an empty database.
+      - name: Restore the warehouse
+        run: echo "TODO: restore data/warehouse/regimetrader.db (see the warning above)"
+
+      - name: Run the paper daily job
+        run: python -m src.paper.daily_job
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regimetrader-logs
+          path: |
+            logs/
+            reports/daily/
+
+      # Only enable together with a real restore step above.
+      - name: Save the warehouse
+        if: always()
+        run: echo "TODO: save data/warehouse/regimetrader.db"

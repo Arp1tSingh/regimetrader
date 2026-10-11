@@ -51,9 +51,10 @@ smoke:
 	$(PY) -m src.models.train --config $(SMOKE)
 	$(PY) -m src.backtest.tune --config $(SMOKE)
 	$(PY) -m src.backtest.baselines --all --period validation --config $(SMOKE)
+	$(PY) -m src.paper.daily_job --run-id paper_replay --from 20220103 --to 20220429 --no-etl --config $(SMOKE)
 	@REM Phase 6: $(PY) -m src.backtest.final_test --confirm --config $(SMOKE)
 	@REM Phase 6: $(PY) -m src.backtest.report --config $(SMOKE)
-	@REM Phase 7: $(PY) -m src.paper.daily_job --no-etl --run-id paper_replay --from 2025-01-02 --to 2025-03-31 --config $(SMOKE)
+	
 
 etl-full:
 	$(PY) -m src.etl.pipeline --full-refresh --config $(CFG)

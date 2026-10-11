@@ -1,0 +1,32 @@
+# RegimeTrader daily job — example schedule. NOT INSTALLED (DECISIONS R22).
+#
+# This file is a starting point for the human to install. The agent deliberately does
+# not install any scheduler: deployment is the operator's decision, not the build's.
+#
+# IMPORTANT: this job needs a warehouse that persists between runs. On a server with a
+# persistent disk the SQLite file just works. On an ephemeral runner (a container, a
+# GitHub Actions runner) the SQLite file is lost when the job ends, so the warehouse
+# must be restored before and saved after — as an artifact, or committed — or the
+# project must be moved to PostgreSQL. See deploy/github_actions_daily.yml.
+#
+# Server clock must be Asia/Kolkata. The NSE session closes at 15:30 IST and
+# end-of-day data is published afterwards, so 17:00 IST leaves margin.
+#
+# Install with:  crontab -e   and paste one of the lines below.
+
+# Minute Hour DayOfMonth Month DayOfWeek  Command
+# 0     17   *          *     1-5         cd /path/to/regimetrader && .venv/bin/python -m src.paper.daily_job >> logs/daily.log 2>&1
+
+# Windows Task Scheduler equivalent (run interactively to confirm it works first):
+#   schtasks /Create /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 17:00 ^
+#     /TR "C:\path\to\regimetrader\.venv\Scripts\python.exe -m src.paper.daily_job"
+
+# Notes:
+#   * The job is idempotent. Running it twice on the same day changes nothing: a date is
+#     "processed" when fact_portfolio_daily has a row for it, and each date commits in
+#     one transaction.
+#   * On a market holiday the job logs "nothing to do" and exits 0. It cannot tell a
+#     holiday from a day whose data has not been published, so a stale-data alert is
+#     raised separately after data.stale_after_days days without a new index bar.
+#   * paper_live refuses to start until TEST_RUN_LOCK.json exists, so the strategy must
+#     be frozen and the test period evaluated first.
