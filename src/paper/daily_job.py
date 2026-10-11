@@ -59,9 +59,12 @@ def trading_dates(
         "SELECT p.date_key AS date_key FROM fact_price p "
         "JOIN dim_stock s ON s.stock_key = p.stock_key "
         "WHERE s.instrument_type = 'INDEX' "
-        "AND p.date_key >= :a AND p.date_key <= :b "
+        "AND p.date_key > :a AND p.date_key <= :b "
         "ORDER BY p.date_key",
-        {"a": int(after_key or from_key or 0), "b": int(to_key or 99999999)},
+        {
+            "a": int(after_key) if after_key else int(from_key or 0) - 1,
+            "b": int(to_key or 99999999),
+        },
     )
     return [int(x) for x in frame["date_key"]] if not frame.empty else []
 
@@ -107,6 +110,203 @@ def signal_dates_allowed(cfg: dict[str, Any], run_id: str, date_key: int) -> boo
         return False
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
     return int(date_key) > int(lock["data_end_date"])
+
+
+def ensure_inputs(cfg: dict[str, Any], engine: Any, date_key: int, model: str) -> None:
+    """Steps c, d and e: make sure this date has indicators, a regime and a probability.
+
+    A brand-new trading date has prices but nothing derived from them. The panel, the
+    regime and the prediction all stop at the last date the research pipeline reached,
+    so the daily job has to extend them before it can decide. Indicators are always
+    recomputed from the full history (never incrementally) to avoid drift in the
+    recursive columns.
+
+    Args:
+        cfg: Loaded config.
+        engine: Warehouse engine.
+        date_key: The date being processed.
+        model: The selected model's name.
+
+    Raises:
+        ValueError: If the prediction still cannot be produced after this.
+    """
+    from sqlalchemy import text
+
+    from src.common.db import read_sql
+
+    have = read_sql(
+        engine,
+        "SELECT COUNT(*) AS n FROM fact_signal f JOIN dim_model m "
+        "ON m.model_key = f.model_key WHERE m.model_name = :m AND f.date_key = :d",
+        {"m": model, "d": int(date_key)},
+    )
+    if int(have["n"].iloc[0]) > 0:
+        return
+
+    log = get_logger("src.paper.daily_job", cfg)
+
+    # (c) Indicators, recomputed from the full history.
+    from src.features.indicators import build_indicators
+
+    build_indicators(engine, cfg)
+
+    _extend_regime(cfg, engine, int(date_key))
+
+    # (d,e) Predict with the model trained for this calendar year.
+    import joblib
+
+    from src.features.panel import build_panel, get_feature_cols, use_vix_in_regime
+
+    symbol_col = "symbol"
+
+    year = pd.Timestamp(str(int(date_key))).year
+    model_path = Path(cfg["paths"]["models"]) / f"{model}_wf{year}.joblib"
+    if not model_path.exists():
+        raise ValueError(
+            f"no model file {model_path}; the daily job trains {model} for {year} "
+            "from data before the year start minus the embargo"
+        )
+    # `live=True` keeps each stock's final row even though it has no label: the newest
+    # trading day is by definition the one whose t+1 has not happened yet.
+    panel = build_panel(engine, cfg, use_cache=False, live=True)
+    today = panel[panel["date_key"] == int(date_key)]
+    if today.empty:
+        raise ValueError(f"the panel has no rows for {date_key}; the data may be incomplete")
+
+    stock_keys = dict(
+        read_sql(engine, "SELECT symbol, stock_key FROM dim_stock").itertuples(
+            index=False, name=None
+        )
+    )
+    regimes = dict(
+        read_sql(engine, "SELECT date_key, regime_key FROM fact_market_regime").itertuples(
+            index=False, name=None
+        )
+    )
+
+    estimator = joblib.load(model_path)
+    # The same column list the trainer used, or the fitted pipeline rejects them.
+    feature_cols = get_feature_cols(use_vix_in_regime(cfg, engine))
+    missing = [c for c in feature_cols if c not in today.columns]
+    if missing:
+        raise ValueError(f"panel is missing feature column(s): {missing}")
+    predictions = estimator.predict_proba(today[feature_cols])[:, 1]
+
+    from src.common.db import execute_many
+
+    rows = [
+        {
+            "d": int(row.date_key),
+            "s": stock_keys.get(str(row[symbol_col])),
+            "k": _model_key(engine, model),
+            "r": int(regimes.get(int(row.date_key), 0) or 0),
+            "p": float(prob),
+        }
+        for (_, row), prob in zip(today.iterrows(), predictions, strict=True)
+        if str(row[symbol_col]) in stock_keys
+    ]
+    with engine.begin() as conn:
+        execute_many(
+            conn,
+            "INSERT OR REPLACE INTO fact_signal (date_key, stock_key, model_key, regime_key, "
+            "prob_up, signal, target_weight) VALUES (:d, :s, :k, :r, :p, 0, 0.0)",
+            rows,
+        )
+    log.info("extended indicators, regime and %d prediction(s) to %d", len(rows), date_key)
+    del text
+
+
+def _extend_regime(cfg: dict[str, Any], engine: Any, date_key: int) -> None:
+    """Write the smoothed regime label for one new date.
+
+    The regime model is never refit (`regime.refit: none`). The new date is classified
+    with the saved scaler and K-Means, then smoothed against the recent stored labels,
+    so the trailing window carries forward exactly as it did in the research run.
+    """
+    import joblib
+    from sqlalchemy import text
+
+    from src.common.db import read_sql
+    from src.regime.regime_model import (
+        _load_market_series,
+        build_market_features,
+        classify_day,
+    )
+
+    bundle = joblib.load(Path(cfg["paths"]["models"]) / "regime_model.joblib")
+    index_close, vix_close = _load_market_series(engine, cfg)
+    features = build_market_features(
+        index_close,
+        vix_close,
+        int(cfg["regime"]["drawdown_window"]),
+        int(cfg["regime"]["drawdown_min_periods"]),
+    )
+    if int(date_key) not in features.index:
+        raise ValueError(
+            f"no market features for {date_key}; the index may not have traded that day"
+        )
+
+    history = read_sql(
+        engine,
+        "SELECT r.regime_label AS label FROM fact_market_regime m "
+        "JOIN dim_regime r ON r.regime_key = m.regime_key "
+        "WHERE m.date_key < :d ORDER BY m.date_key DESC LIMIT 20",
+        {"d": int(date_key)},
+    )
+    history_labels = [
+        str(x) for x in history["label"].iloc[::-1]
+    ]  # oldest first, as classify_day expects
+
+    cluster, smoothed = classify_day(bundle, features.loc[int(date_key)], history_labels)
+
+    row = features.loc[int(date_key)]
+    keys = dict(
+        read_sql(engine, "SELECT regime_label, regime_key FROM dim_regime").itertuples(
+            index=False, name=None
+        )
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM fact_market_regime WHERE date_key = :d"), {"d": int(date_key)}
+        )
+        conn.execute(
+            text(
+                "INSERT INTO fact_market_regime (date_key, regime_key, cluster_id, "
+                "mkt_return_20d, mkt_vol_20d, india_vix, mkt_drawdown) "
+                "VALUES (:d, :r, :c, :ret, :vol, :vix, :dd)"
+            ),
+            {
+                "d": int(date_key),
+                "r": int(keys.get(smoothed, 0) or 0),
+                "c": int(cluster),
+                "ret": _opt(row, "mkt_return_20d"),
+                "vol": _opt(row, "mkt_vol_20d"),
+                "vix": _opt(row, "india_vix"),
+                "dd": _opt(row, "mkt_drawdown"),
+            },
+        )
+
+
+def _opt(row: Any, name: str) -> float | None:
+    """A feature value as a float, or None when it is missing."""
+    value = row.get(name, None)
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _model_key(engine: Any, model: str) -> int:
+    from src.common.db import read_sql
+
+    frame = read_sql(
+        engine, "SELECT model_key AS k FROM dim_model WHERE model_name = :m", {"m": model}
+    )
+    if frame.empty:
+        raise ValueError(f"model {model} is not in dim_model")
+    return int(frame["k"].iloc[0])
 
 
 def _market_snapshot(engine: Any, date_key: int) -> dict[str, dict[str, float]]:
@@ -212,6 +412,11 @@ def process_date(
         )
     )
 
+    # (c,d,e) A brand-new trading date needs indicators, a regime and a probability
+    # extending to today before it can be decided. This must run BEFORE the date
+    # transaction opens: it writes in its own right and would deadlock against it.
+    ensure_inputs(cfg, engine, date_key, model)
+
     with engine.begin() as conn:
         previous = int(
             conn.execute(
@@ -314,13 +519,12 @@ def process_date(
                 trade_rows,
             )
 
-        # (c,d,e) indicators, regime and probabilities must already exist for this date.
+        # (f) DECIDE and store tomorrow's targets.
         regime = _regime_for(engine, date_key)
         probs = _probabilities(engine, model, date_key)
         if not probs:
             raise ValueError(
-                f"no stored probabilities for {model} on {date_key}; run "
-                "`python -m src.models.train` before the paper job"
+                f"no stored probabilities for {model} on {date_key} after extending inputs"
             )
 
         # (f) DECIDE and store tomorrow's targets.
@@ -466,6 +670,20 @@ def run(
                 identifier,
                 from_key,
             )
+
+    if identifier == str(cfg["paper"]["run_id"]) and dates:
+        # R26: a live run may not touch dates the test period already evaluated. Without
+        # stored predictions for such a date it would have to write fact_signal there,
+        # which is exactly what the rule forbids, so those dates are skipped.
+        allowed = [d for d in dates if signal_dates_allowed(cfg, identifier, d)]
+        skipped = [d for d in dates if d not in allowed]
+        if skipped:
+            log.info(
+                "skipping date(s) %s: on or before the lock's data_end_date, so paper_live "
+                "may not write fact_signal there (R26)",
+                ", ".join(str(d) for d in skipped),
+            )
+        dates = allowed
 
     if not dates:
         log.info("nothing to do (holiday or already processed)")

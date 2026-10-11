@@ -6,11 +6,12 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 
 ## Current position
 
-- Phase: 6 **complete** (T6.1-T6.4). **Phase 7 not started.**
-- Next task: **stopped and waiting for the human** — `paper_live` must not be run without instruction
-- Last gate passed: **P5** (`make check && make smoke` after T5.8). Phases 3, 4, 5 and 6 complete.
-- Test count: **436 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **462 total** with the slow set.
+- Phase: 7 **complete** (T7.1-T7.5). **Phase 8 not started.**
+- Next task: **stopped and waiting for the human**
+- Last gate passed: **P6** (`make check && make smoke` with the paper replay wired in). Phases 3-7 complete.
+- Test count: **452 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **480 total** with the slow set.
 - Test period evaluated: **yes, once.** `TEST_RUN_LOCK.json` `run_count` **2** (one crash, one authorised rerun; reason in `test_run_log.jsonl`). Freeze commit `2d16451`; rerun commit `afefc4b`.
+- Paper trading: `paper_live` initialised and run on real data, **exit 0, no trades committed** because the only candidate date (2026-10-09) is the lock's `data_end_date` and R26 forbids writing signals there.
 
 ## 2026-10-10 — T5.6 and T5.7 results on the validation year
 
@@ -71,6 +72,35 @@ This is **not** because cash inflates Sharpe — Sharpe is a ratio and exposure 
 ### Expected outcome, restated
 
 > **The strategy trails buy-and-hold on return (4.6% against 19.5%) and on Sharpe against two of the three baselines. Drawdown looks better than buy-and-hold, but on one trade.**
+
+## 2026-10-11 — Phase 7 complete: paper trading (T7.1-T7.5)
+
+**Paper trading demonstrates that the system operates. It does not demonstrate that it
+makes money.** Given the Phase 6 result — every confidence interval crossing zero, and
+the classifier ablation (V1) beating the full system — no paper P&L in this project may
+be reported as evidence of performance. This is stated in `README.md`, in every
+`reports/daily/<date>.md`, and here.
+
+| Task | What was built |
+|---|---|
+| T7.1 | `src/paper/store.py`: all state derived from the warehouse — holdings by replaying `fact_trade` in order (average-cost), cash and equity from `fact_portfolio_daily`, pending decisions from `pending_target`, cooldowns from `reason = 'STOP_LOSS'` |
+| T7.2 | `src/paper/daily_job.py`: one date at a time in ascending order, steps a–f in **one transaction**, reusing the engine's own `plan_orders` / `fill_order` / `mark_to_market` so a replay matches the backtest |
+| T7.3 | `src/paper/alerts.py`: `alert()` to `logs/alerts.log` and stderr, email only when SMTP is fully configured, plus stale-data detection |
+| T7.4 | `src/paper/report.py` writing `reports/daily/<date>.md`; `deploy/cron.example` and `deploy/github_actions_daily.yml` written, **nothing installed** (R22) |
+| T7.5 | Paper replay added to `make smoke` (passes); `paper_live` initialised on the real warehouse |
+
+**Crash recovery (the property that mattered).** `test_restart_after_a_mid_date_crash_reproduces_the_same_state` rolls a committed date back to nothing, restarts, and proves the restart reproduces **the same cash, equity, drawdown on every date, the same holdings and the same pending targets**, with no duplicate trades and no silent move to cash. The test was verified by **mutation**: injecting a corrupted equity into the restart made it fail, so it is not passing trivially.
+
+**Three real bugs found and fixed while building this:**
+1. **Cash was lost between dates.** Cash was rebuilt by replaying trades, so a day that placed no orders left the run with zero cash the next day — equity 0.00 and drawdown 100%. Cash now comes from `fact_portfolio_daily`. Guarded by `test_cash_survives_a_date_with_no_trades`.
+2. **`fill_order` was called with the portfolio instead of the open price**, so no trade could ever fill correctly.
+3. **An already-processed date was re-processed**, because the date query used `>=` rather than `>`.
+
+**R26 violation caught and rolled back.** The first real `paper_live` run wrote `fact_signal` for 2026-10-09, which is the lock's `data_end_date` — dates on or before it are exactly what a live run may not touch. The rows were deleted, `fact_signal` was restored to its pre-run maximum of 20261008, and the job now **skips** such dates with an explanation. The re-run starts flat at 2026-10-09, declines to process it, logs "nothing to do" and **exits 0**.
+
+**The first real `paper_live` run therefore committed no trades**, and that is the honest outcome: the test period already covered through 2026-10-09 and no later trading day exists in the warehouse. The job is ready for the next session.
+
+**480 tests pass (452 fast).** `make smoke` passes end to end including the paper replay and its daily report.
 
 ## 2026-10-11 — Phase 6 complete: the one-time test evaluation (T6.1-T6.4)
 
@@ -335,6 +365,17 @@ Two things to weigh before Phase 6, neither of which blocks it:
 | 2026-10-10 | **T5.7** | **Bug fixed: CAGR was NaN for every run** (R38). The equity frame had a `RangeIndex`, so `summarize` could not measure elapsed time — all 18 grid trials and all baselines reported a blank CAGR while every other metric looked healthy and nothing failed. The frame is now indexed by a `DatetimeIndex`. Guarded by `test_cagr_needs_a_datetime_index`. |
 | 2026-10-10 | **T5.7** | **Validation result: the strategy is beaten by every baseline on return** — V2 0.046 CAGR against B1 0.195, B2 0.389, B3 0.320. The pre-registered expectation is confirmed and the margin is wide. B4's first permutations, carrying no information, already produced Sharpe 3.48 / 3.04 / 1.80 against the strategy's 2.57. |
 | 2026-10-10 | tests | **408 fast tests, 430 total** (up from 352/373). Three of my own new tests were wrong and were corrected rather than weakened: `nan != nan`, a "clustering widens the interval" test built on i.i.d. data where it does not, and a "longer block widens the interval" test rebuilt on AR(1) data where it does. |
+| 2026-10-11 | **T7.1** | `src/paper/store.py`: all paper state derived from the warehouse. Round-trip test proves the derived holdings equal the engine's own open positions after a backtest. |
+| 2026-10-11 | **T7.2** | `src/paper/daily_job.py`: one trading date at a time in ascending order, steps a-f in **one transaction**, reusing the engine's `plan_orders` / `fill_order` / `mark_to_market`. R26 guards tested: refused without `TEST_RUN_LOCK.json`, refused without a frozen config, a replay exempt, and only `paper_live` may write `fact_signal`. |
+| 2026-10-11 | **T7.2** | **Crash recovery proven, not asserted.** A committed date is rolled back to nothing, the job restarts, and the restart reproduces the same cash, equity, drawdown on every date, holdings and pending targets with no duplicate trades and no silent move to cash. **Verified by mutation**: injecting a corrupted equity makes the test fail. |
+| 2026-10-11 | **T7.2** | **Bug fixed: cash was lost between dates.** Cash was rebuilt by replaying `fact_trade`, so a day that placed no orders left the run with zero cash — equity 0.00, drawdown 100%. Cash now comes from `fact_portfolio_daily`. Guarded by `test_cash_survives_a_date_with_no_trades`. |
+| 2026-10-11 | **T7.2** | **Two more bugs fixed**: `fill_order` was called with the portfolio instead of the open price, so no trade could fill correctly; and the date query used `>=`, so an already-processed date was reprocessed on every run. |
+| 2026-10-11 | **T7.2** | **R26 violation caught and rolled back.** The first real `paper_live` run wrote `fact_signal` for 2026-10-09, which is the lock's `data_end_date` — precisely what a live run may not touch. Rows deleted, `fact_signal` restored to its pre-run maximum of 20261008, and the job now **skips** such dates with an explanation. |
+| 2026-10-11 | **T7.4** | `src/paper/report.py` writes `reports/daily/<date>.md` with regime, equity, drawdown, held positions, today's fills and tomorrow's orders, and a disclaimer that paper trading is not evidence of performance. `deploy/cron.example` and `deploy/github_actions_daily.yml` written; **nothing installed** (R22). Both carry the warning that a SQLite file is lost on an ephemeral runner. |
+| 2026-10-11 | **T7.5** | `make smoke` passes end to end with the paper replay wired in, writing `reports_smoke/daily/2022-04-29.md`. **`paper_live` run on the real warehouse: exit 0.** It starts flat at 2026-10-09, declines to process it because that is the lock's `data_end_date`, and logs "nothing to do". **No trades were committed, and that is the honest outcome** — the test already covered through 2026-10-09 and no later trading day exists. |
+| 2026-10-11 | T7.4 | **`README.md` and this file now state plainly that paper trading demonstrates the system operates, not that it makes money**, and that paper P&L must not be reported as performance evidence. |
+| 2026-10-11 | T7.2 | **Per-year B1 and B2 returns were not added to the Phase 6 report.** `yearly_test.csv` contains only `backtest_main` — it has no baseline rows — so the figures cannot be read from it. Recorded in `RESULTS.md` instead. The daily equity for all seven test runs does still sit in `fact_portfolio_daily`, so they could be **derived** with no rescore, but that was not authorised and was not done. |
+| 2026-10-11 | tests | **452 fast tests, 480 total** (up from 436/462). Two of my own assertions were wrong and were corrected: one compared holdings against *all* traded symbols rather than the open ones, and one expected a rolled-back date to keep the final cash rather than reverting to the previous date's. |
 | 2026-10-11 | **T6.2** | **The run crashed once and completed under `run_count` 2.** First invocation scored the strategy, ablations, baselines and classifiers, then crashed in B4: `b4_distribution` called `run_backtest` without `allow_test_period=True`, so the guard raised `ValueError`. Reported and held rather than re-run. The fix was one keyword parameter defaulting to `False`. **All six outputs checksummed before the rerun were bit-identical afterwards.** |
 | 2026-10-11 | **T6.2** | **Test results: beat buy-and-hold on Sharpe (0.485 vs 0.158) and CAGR (0.055 vs 0.012); lost on drawdown (0.193 vs 0.156).** Lost to B2 on all three and to B3 on Sharpe and drawdown. **Every CI crosses zero, including the strategy's own.** |
 | 2026-10-11 | **T6.2** | **The classifier is a net negative, shown by its own ablation.** V1 (regime filter only) beat V2 by 0.19 Sharpe and 4.8 points of CAGR while trading 322 times instead of 1,004. Test-period edges over the majority baseline are all within ±0.01 with ROC-AUC 0.514–0.520. **No claim is made that the classifier adds value.** |
@@ -399,7 +440,7 @@ Two things to weigh before Phase 6, neither of which blocks it:
 
 **Gate P4:** `make check && make smoke`. **PASSED** — 352 fast tests, 373 total.
 **Phase 6 Final evaluation:** [x] T6.1 [x] T6.2 [x] T6.3 [x] T6.4
-**Phase 7 Paper trading:** [ ] T7.1 [ ] T7.2 [ ] T7.3 [ ] T7.4 [ ] T7.5
+**Phase 7 Paper trading:** [x] T7.1 [x] T7.2 [x] T7.3 [x] T7.4 [x] T7.5
 **Phase 8 Dashboard:** [ ] T8.1 [ ] T8.2
 **Phase 9 Stretch:** [ ] T9.1 [ ] T9.2 [ ] T9.3 [ ] T9.4
 **Phase 10 Handoff:** [ ] T10.1 [ ] T10.2 [ ] T10.3 [ ] T10.4
