@@ -46,15 +46,39 @@ def _render(config: str, screen: str) -> Any:
 # --------------------------------------------------------------- screens exist
 
 
+#: The five screens `spec 02` section 6 names, in order.
+SPEC_SCREENS = [
+    "Market overview",
+    "OLAP explorer",
+    "Today's signals",
+    "Backtest results",
+    "Model diagnostics",
+]
+
+#: Screens added after the spec was written. Each is an append-only addition, never a
+#: reordering or a replacement, so the spec's list stays verifiable on its own.
+ADDED_SCREENS = [
+    "Bot demo (replay)",
+]
+
+
 def test_the_five_spec_screens_are_present() -> None:
-    """`spec 02` section 6 names exactly five."""
-    assert list(dashboard.SCREENS) == [
-        "Market overview",
-        "OLAP explorer",
-        "Today's signals",
-        "Backtest results",
-        "Model diagnostics",
-    ]
+    """`spec 02` section 6 names exactly five, and they must come first and unchanged.
+
+    The bot demo screen is an addition recorded in `DECISIONS` R55, so it is asserted
+    separately rather than folded into this list: if it were merged in here, a later
+    change could quietly drop one of the five the spec requires.
+    """
+    assert list(dashboard.SCREENS)[: len(SPEC_SCREENS)] == SPEC_SCREENS
+
+
+def test_added_screens_are_appended_after_the_five_spec_screens() -> None:
+    """Every screen beyond the spec's five is a declared, appended addition."""
+    actual = list(dashboard.SCREENS)
+    assert actual[len(SPEC_SCREENS) :] == ADDED_SCREENS, (
+        "a screen was added without recording it in ADDED_SCREENS and DECISIONS"
+    )
+    assert len(actual) == len(SPEC_SCREENS) + len(ADDED_SCREENS)
 
 
 @pytest.mark.slow

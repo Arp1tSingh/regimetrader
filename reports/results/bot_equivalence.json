@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-10-16T18:58:58.496694+00:00",
+  "lookback_trading_days": 267,
+  "model": "rf",
+  "float_tolerance": 1e-09,
+  "days_tested": [
+    20240101,
+    20240105
+  ],
+  "method": "every mode recomputes indicators, regime, prob_up and target weights from truncated raw fact_price through the real pipeline (build_indicators -> _extend_regime -> build_panel -> classifier -> src.trading.rules.target_weights). No stored fact_signal value is read.",
+  "results": [
+    {
+      "day": 20240101,
+      "regime": "BULL",
+      "literal_seconds": 48.8,
+      "fast_seconds": 8.2,
+      "speedup": 6.0,
+      "equivalence": {
+        "match": true,
+        "prob_values_compared": 50,
+        "weights_compared": 10,
+        "max_prob_delta": 3.3306690738754696e-16,
+        "tolerance": 1e-09,
+        "mismatches": [],
+        "mismatch_count": 0
+      },
+      "lookahead_mutation": {
+        "performed": true,
+        "mutated_date": 20240102,
+        "regime_unchanged": true,
+        "probs_unchanged": true,
+        "weights_unchanged": true,
+        "passed": true
+      },
+      "rows": 50
+    },
+    {
+      "day": 20240105,
+      "regime": "BULL",
+      "literal_seconds": 42.3,
+      "fast_seconds": 7.8,
+      "speedup": 5.4,
+      "equivalence": {
+        "match": true,
+        "prob_values_compared": 50,
+        "weights_compared": 10,
+        "max_prob_delta": 3.3306690738754696e-16,
+        "tolerance": 1e-09,
+        "mismatches": [],
+        "mismatch_count": 0
+      },
+      "lookahead_mutation": {
+        "performed": true,
+        "mutated_date": 20240108,
+        "regime_unchanged": true,
+        "probs_unchanged": true,
+        "weights_unchanged": true,
+        "passed": true
+      },
+      "rows": 50
+    }
+  ],
+  "all_match": true,
+  "all_lookahead_safe": true
+}

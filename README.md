@@ -212,6 +212,52 @@ cannot alter anything.
 
 `docs/DEMO_SCRIPT.md` has the full 16-minute walkthrough and a fallback table.
 
+### Bot demo (replay) — and its safety limits
+
+The **Bot demo (replay)** screen re-runs the frozen strategy over a few test-period days
+on a **temporary copy** of the warehouse, so a visitor can watch the bot decide and then
+check that its first-day orders match the recorded `backtest_main` run.
+
+Because the dashboard is publicly reachable, the screen is built for an anonymous
+visitor:
+
+- the warehouse is opened **read-only** (`mode=ro`), so a write raises rather than
+  succeeding — there is a test that asserts exactly that;
+- every run works on a **temporary copy that is deleted afterwards**, including when it
+  fails — there is a test for the failure case too;
+- **one run at a time** (a second visitor gets a "busy" message) and each run is
+  **time-capped**;
+- the start date comes from a **fixed list of five**; there is no text box, so nothing a
+  visitor enters can reach a query;
+- errors show a **generic message**; the detail goes to the server log;
+- results are **cached per start date**, and `paper_live`, `final_test` and everything
+  that writes to the warehouse are unreachable from this code path (also tested).
+
+The screen is a **replay of already-scored data. It makes no performance claim.** It shows
+no Sharpe, CAGR or drawdown, and a test asserts those names never appear on it.
+
+The one flag this screen lifts is the test-period guard, and only in a call that also sets
+`persist=False` and `write_signals=False` (`DECISIONS` R54). It replays days the authorised
+run already scored; it never writes a result.
+
+#### Why the fast path is legitimate
+
+The screen recomputes a 267-trading-day tail rather than all 2,898, because a full
+recompute costs ~46s against ~8s for the tail. That optimisation is only sound if every
+feature is causal, so it is proved rather than asserted:
+
+```bash
+python scripts/bot_equivalence.py     # ~3 min; writes reports/results/bot_equivalence.json
+```
+
+For day 1 and day 5 it runs a **literal** recompute (every row after the day deleted, full
+rebuild) beside the fast path and compares regime label, `prob_up` and target weights.
+**Nothing is read from stored `fact_signal`** — both sides recompute through the same
+pipeline, and a test corrupts a stored weight to prove the comparison can fail. It then
+changes a price **after** the day, keeps that row, and confirms the day's answer does not
+move. The dashboard shows the recorded numbers, and a failed proof is displayed rather than
+hidden.
+
 #### Publishing the link to GitHub
 
 ```bash

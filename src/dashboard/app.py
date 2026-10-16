@@ -15,6 +15,7 @@ rather than left to the author of any one chart:
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -508,6 +509,249 @@ def _importance_chart(frame: pd.DataFrame) -> Any:
     return figure
 
 
+# ---------------------------------------------------------------- bot demo
+
+
+def screen_bot(cfg: dict[str, Any], engine: Any) -> None:
+    """Replay the frozen bot on a throwaway copy. Never touches the real warehouse."""
+    st.subheader("Bot demo")
+
+    st.warning(
+        "**This is a replay of already-scored data, to demonstrate decisions only.**\n\n"
+        "It makes **no performance claim** of any kind. No real money is involved and "
+        "there is no broker connection. The numbers shown are what the frozen strategy "
+        "decided on those dates, not a forecast and not a result you could earn."
+    )
+
+    from src.dashboard import bot
+
+    allowed = bot.available_start_dates(cfg, dd.readonly_engine(cfg))
+    if not allowed:
+        dd.empty("This warehouse has no trading days in its configured test period.")
+        return
+
+    st.caption(
+        f"Safety limits: the warehouse is opened read-only, every run works on a "
+        f"temporary copy that is deleted afterwards, only one run happens at a time, "
+        f"and only these {len(allowed)} start dates can be chosen. "
+        f"Lookback: {bot.lookback_trading_days(cfg)} trading days, derived from the "
+        f"regime drawdown window and the longest indicator."
+    )
+
+    labels = {f"day {d}  ({pd.Timestamp(str(d)):%d %b %Y})": d for d in allowed}
+    choice = st.selectbox("Start day", list(labels))
+    start_date = labels[choice]
+
+    run = bot.cached(start_date)
+    if run is not None:
+        st.success(
+            f"Showing a cached run for {pd.Timestamp(str(run.start_date)):%d %b %Y} "
+            f"(computed in {run.elapsed_seconds:.1f}s). Press Run to recompute."
+        )
+        _render_bot(run)
+        st.divider()
+
+    if st.button("Run the bot", type="primary"):
+        _run_bot(cfg, start_date, allowed)
+
+
+def _run_bot(cfg: dict[str, Any], start_date: int, allowed: tuple[int, ...]) -> None:
+    """Run a replay, with every failure mode reduced to a safe, generic message."""
+    from src.dashboard import bot
+
+    status = st.empty()
+    try:
+        with bot.single_run():
+            status.info("Replaying on a temporary copy...")
+            progress = st.progress(0.0, text="starting")
+
+            def on_day(index: int) -> None:
+                progress.progress(
+                    min(1.0, (index + 1) / bot.WINDOW_DAYS),
+                    text=f"day {index + 1} of {bot.WINDOW_DAYS}",
+                )
+
+            deadline = bot.timeout_guard(bot.RUN_TIMEOUT_SECONDS)
+
+            def deadline_check() -> None:
+                deadline()
+
+            run = bot.run_replay(
+                cfg,
+                Path(cfg["paths"]["db"]),
+                int(start_date),
+                allowed=allowed,
+                deadline_check=deadline_check,
+                per_day_check=on_day,
+            )
+            progress.empty()
+            status.empty()
+
+            run.first_day_check = bot.first_day_check_against_backtest(cfg, run)
+            bot.store(run)
+            st.rerun()
+    except bot.ReplayBusy:
+        status.empty()
+        st.warning("A replay is already running for someone else. Try again in a moment.")
+    except TimeoutError:
+        status.empty()
+        st.error("That took too long and was stopped. Try again.")
+    except Exception:
+        # Nothing internal is shown to an anonymous visitor: no paths, no SQL, no
+        # traceback. The detail goes to the server log.
+        status.empty()
+        _log_bot_failure(start_date)
+        st.error("The replay could not be completed. Please try again.")
+
+
+def _log_bot_failure(start_date: int) -> None:
+    """Record the real reason server-side, where an anonymous visitor cannot see it."""
+    import traceback
+
+    from src.common.log import get_logger
+
+    log = get_logger("src.dashboard.bot", {"paths": {"logs": "logs"}})
+    log.error("bot demo failed for start_date=%s\n%s", start_date, traceback.format_exc())
+
+
+def _render_bot(run: Any) -> None:
+    from src.dashboard import bot
+
+    st.markdown(
+        f"**{bot.WINDOW_DAYS} trading days from "
+        f"{pd.Timestamp(str(run.start_date)):%d %b %Y}** — completed in "
+        f"{run.elapsed_seconds:.1f}s using {run.lookback} days of lookback history."
+    )
+
+    summary = pd.DataFrame(
+        [
+            {
+                "day": pd.Timestamp(str(d.date_key)).strftime("%Y-%m-%d"),
+                "regime": d.regime or "n/a",
+                "entry threshold": (
+                    "n/a" if d.entry_threshold is None else f"{d.entry_threshold:.6f}"
+                ),
+                "candidates": d.candidates,
+                "above threshold": d.passed_threshold,
+                "target weights": len(d.target_weights),
+                "orders": len(d.orders),
+                "equity": round(d.equity, 2),
+                "cash": round(d.cash, 2),
+                "holdings value": round(d.positions_value, 2),
+            }
+            for d in run.days
+        ]
+    )
+    st.dataframe(summary, width="stretch")
+
+    for day in run.days:
+        with st.expander(f"{pd.Timestamp(str(day.date_key)):%Y-%m-%d} — {day.regime or 'n/a'}"):
+            if day.target_weights:
+                st.markdown(
+                    f"**Target weights at this close** "
+                    f"({len(day.target_weights)} name(s), exposure "
+                    f"{sum(day.target_weights.values()):.4f}):"
+                )
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {"symbol": symbol, "target weight": round(weight, 6)}
+                            for symbol, weight in sorted(day.target_weights.items())
+                        ]
+                    ),
+                    width="stretch",
+                )
+            else:
+                st.write("No target weights on this day.")
+            if not day.orders:
+                st.write("No orders on this day.")
+            else:
+                st.dataframe(pd.DataFrame(day.orders), width="stretch")
+            if day.holdings:
+                st.markdown("**Holdings after the fill:**")
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {"symbol": symbol, "quantity": quantity}
+                            for symbol, quantity in sorted(day.holdings.items())
+                        ]
+                    ),
+                    width="stretch",
+                )
+
+    check = run.first_day_check
+    st.markdown("### No-hindsight check (day 1)")
+    if not check:
+        st.write("Not run for this result.")
+        return
+    if check.get("match"):
+        st.success(
+            f"The replay's first-day orders **match** the stored `backtest_main` records: "
+            f"{check['n_replay']} orders on both sides, same symbols, quantities and "
+            f"fill prices. Both filled at the next day's open."
+        )
+    else:
+        st.error(
+            "The replay's first-day orders **do not match** the stored "
+            "`backtest_main` records. Shown in full rather than hidden."
+        )
+        st.json(check)
+
+    proof = _read_proof()
+    if proof is None:
+        st.info("No offline equivalence proof has been recorded yet.")
+    else:
+        agree = proof.get("all_match")
+        safe = proof.get("all_lookahead_safe")
+        st.markdown("### Verified offline")
+        st.caption(
+            f"A full literal recompute was run on {proof.get('generated_at', 'an earlier date')} "
+            f"and compared with the fast path this page uses."
+        )
+        if agree and safe:
+            st.success(
+                f"Days tested: {proof.get('days_tested')}. Every regime label and target "
+                f"weight matched exactly, and every `prob_up` matched within "
+                f"{proof.get('float_tolerance')}."
+            )
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "day": r["day"],
+                            "regime": r["regime"],
+                            "values compared": r["equivalence"]["prob_values_compared"],
+                            "max delta": r["equivalence"]["max_prob_delta"],
+                            "literal (s)": r["literal_seconds"],
+                            "fast (s)": r["fast_seconds"],
+                            "speed-up": f"{r['speedup']}x",
+                            "look-ahead safe": r["lookahead_mutation"].get("passed"),
+                        }
+                        for r in proof.get("results", [])
+                    ]
+                ),
+                width="stretch",
+            )
+        else:
+            st.error(
+                "The offline proof did **not** pass. The details are below and are not "
+                "being hidden."
+            )
+            st.json(proof)
+
+
+def _read_proof() -> dict[str, Any] | None:
+    from pathlib import Path
+
+    path = Path("reports/results/bot_equivalence.json")
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 # ---------------------------------------------------------------- entry point
 
 SCREENS = {
@@ -516,6 +760,7 @@ SCREENS = {
     "Today's signals": screen_signals,
     "Backtest results": screen_results,
     "Model diagnostics": screen_diagnostics,
+    "Bot demo (replay)": screen_bot,
 }
 
 

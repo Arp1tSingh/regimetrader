@@ -184,32 +184,88 @@ def test_refusal_without_a_frozen_config_is_a_data_failure(
 # --------------------------------------------------------------- period guard
 
 
-def test_final_test_is_the_only_production_caller_of_allow_test_period() -> None:
-    """No module outside tests may pass `allow_test_period=True`.
+#: Repository path -> the keyword arguments that call must *also* pass for lifting the
+#: guard to be acceptable. `DECISIONS` R54.
+#:
+#: `final_test.py` is the authorised one-time evaluation and is unconstrained.
+#: `src/dashboard/bot.py` replays *already-scored* test days behind a public web button,
+#: so it must lift the guard, but only in a call that writes nothing: `persist=False`
+#: and `write_signals=False`. Keyed by full path, so a second file with the same
+#: basename cannot inherit the exemption by accident.
+ALLOWED_ALLOW_TEST_CALLERS: dict[str, frozenset[str]] = {
+    "src/backtest/final_test.py": frozenset(),
+    "src/dashboard/bot.py": frozenset({"persist", "write_signals"}),
+}
+
+
+def test_only_authorised_modules_may_lift_the_test_period_guard() -> None:
+    """No module outside the authorised set may pass `allow_test_period=True`.
 
     Parsed with `ast` rather than grepped: a plain text search also matches the prose
     in docstrings that *describes* the rule, which would fail this test for the wrong
-    reason.
+    reason. The keyword check is equally structural -- `bot.py` may lift the guard only
+    where the same call also disables both writes (`DECISIONS` R54), so adding a
+    persisting call to the demo screen would fail here rather than silently write.
     """
     import ast
 
     repo = Path(__file__).resolve().parents[1]
-    offenders = []
+    offenders: list[str] = []
     for path in (repo / "src").rglob("*.py"):
-        if path.name == "final_test.py":
-            continue
+        relative = path.relative_to(repo).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
+        required = ALLOWED_ALLOW_TEST_CALLERS.get(relative)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-            for keyword in node.keywords:
-                if (
-                    keyword.arg == "allow_test_period"
-                    and isinstance(keyword.value, ast.Constant)
-                    and keyword.value.value is True
-                ):
-                    offenders.append(f"{path.relative_to(repo)}:{node.lineno}")
-    assert not offenders, f"only final_test.py may pass allow_test_period=True: {offenders}"
+            lifts = any(
+                keyword.arg == "allow_test_period"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value is True
+                for keyword in node.keywords
+            )
+            if not lifts:
+                continue
+            if required is None:
+                offenders.append(f"{relative}:{node.lineno} is not an authorised caller")
+                continue
+            given = {keyword.arg for keyword in node.keywords if keyword.arg}
+            missing = required - given
+            if missing:
+                offenders.append(
+                    f"{relative}:{node.lineno} lifts the guard without {sorted(missing)}"
+                )
+    assert not offenders, (
+        "only final_test.py, or bot.py with persist=False and write_signals=False, may "
+        f"pass allow_test_period=True: {offenders}"
+    )
+
+
+def test_the_demo_screen_is_the_only_other_authorised_caller() -> None:
+    """The exemption is two files, and `bot.py` must actually use it.
+
+    If the demo screen stopped needing the flag the exemption should be deleted rather
+    than left in place as an unused hole, so this asserts the call site is still there
+    with both write guards.
+    """
+    import ast
+
+    repo = Path(__file__).resolve().parents[1]
+    tree = ast.parse((repo / "src" / "dashboard" / "bot.py").read_text(encoding="utf-8"))
+    guarded = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        given = {kw.arg: kw.value for kw in node.keywords if kw.arg}
+        if given.get("allow_test_period") is not None:
+            guarded += 1
+            assert isinstance(given["allow_test_period"], ast.Constant)
+            assert given["allow_test_period"].value is True
+            assert isinstance(given.get("persist"), ast.Constant)
+            assert given["persist"].value is False
+            assert isinstance(given.get("write_signals"), ast.Constant)
+            assert given["write_signals"].value is False
+    assert guarded == 1, f"expected exactly one guarded call in bot.py, found {guarded}"
 
 
 def test_run_backtest_still_refuses_the_test_period_by_default() -> None:

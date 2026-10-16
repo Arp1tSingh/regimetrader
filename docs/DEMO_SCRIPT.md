@@ -270,6 +270,74 @@ Say:
 > correctly refused to process it and exited cleanly. Nothing has traded yet, and paper
 > P&L would never be performance evidence."
 
+**Say it early, before anyone clicks:**
+
+> "This screen replays data that has already been scored. It shows the decisions the
+> frozen strategy made on those dates. It is **not** a performance claim, there is no real
+> money, and there is no broker connection."
+
+That sentence matters more on this screen than anywhere else, because the numbers move as
+the bot trades and a visitor could mistake it for a live trading system.
+
+---
+
+## 8b. Bot demo (replay) — optional, 2–3 min
+
+**Show:** dashboard **Bot demo (replay)**.
+
+This is the strongest single demonstration of the no-look-ahead work, because it lets the
+examiner see the no-hindsight check rather than take it on trust.
+
+**Pick a start day from the dropdown and press "Run the bot".** It takes **8-10 seconds**
+(measured: 7.4s end to end, `logs/bot_verify.log`). Only five start dates exist and the
+widget offers exactly those; there is no free-text box anywhere on the page.
+
+Per day it shows the regime, the entry threshold **that regime actually applied**, how many
+stocks cleared it, every order with its reason (`ENTRY`, `REBALANCE`, `EXIT`,
+`STOP_LOSS`), the fill price, the target weights the strategy computed, and the resulting
+holdings and cash.
+
+**Then go to the no-hindsight panel, which is the point of the screen:**
+
+> "Day one of this replay opens exactly the same ten positions the recorded backtest did —
+> ASIANPAINT, BSE, CIPLA, HDFCBANK, HINDUNILVR, ITC, KOTAKBANK, RELIANCE, SUNPHARMA and
+> TITAN — filled at the 2 January open. The replay only ever saw data up to the decision
+> date, so if it matched, it could not have known the future."
+
+If the panel says **match**, say so and move on. If it ever says **mismatch**, stop and
+show it: that is the honest behaviour of the screen and you would want the examiner to
+see it.
+
+**The "verified offline" panel below it** reports a full literal recompute that was run
+separately and compared with the fast path.
+
+> "The page only recomputes a 267-day tail of history, so we proved that is equivalent: for
+> the first and last day of the window we ran the literal version — every row after the day
+> deleted, everything rebuilt from raw prices — and compared. Nothing is read from stored
+> results; both sides recompute through the same pipeline."
+
+**Read the numbers off the screen, do not recite them from memory.** They are printed
+there and they change if the code changes. What to point at:
+
+| Line on screen | What it is |
+|---|---|
+| Days tested | how many days the proof covers (day 1 and day 5 of the window) |
+| values compared | `prob_up` values compared on that day |
+| max delta | the largest disagreement between the two paths |
+| literal (s) / fast (s) / speed-up | what the optimisation buys |
+| look-ahead safe | whether changing a price **after** the day moved the day's answer |
+
+**If `look-ahead safe` is ever `False`, stop and report it.** That column is the claim
+being tested, not a decoration.
+
+### Safety, if an examiner asks about running it publicly
+
+> "The link is public, so the screen is built for an anonymous visitor. The database is
+> opened read-only, so a write physically cannot happen. Every run works on a temporary
+> copy that is deleted afterwards, including if it crashes. Only one person can run at a
+> time and each run is capped. The dates are a fixed list, so nothing a visitor types can
+> reach a query. And errors show a generic message — the detail goes to the server log."
+
 ---
 
 ## 9. Close on the negative result (30 sec)

@@ -12,6 +12,63 @@ Legend: `[ ]` todo, `[x]` done and acceptance passed, `[~]` BLOCKED (reason in B
 - Test count: **452 fast tests** (`make check` runs `-m "not slow"`, so the fast set only), **480 total** with the slow set.
 - Test period evaluated: **yes, once.** `TEST_RUN_LOCK.json` `run_count` **2** (one crash, one authorised rerun; reason in `test_run_log.jsonl`). Freeze commit `2d16451`; rerun commit `afefc4b`.
 - Paper trading: `paper_live` initialised and run on real data, **exit 0, no trades committed** because the only candidate date (2026-10-09) is the lock's `data_end_date` and R26 forbids writing signals there.
+- **New since: the Bot demo (replay) screen is finished, proved and committed** — see the 2026-10-16 section below. The tunnel is down, so the demo needs `make demo-link` before the viva.
+
+## 2026-10-16 — Bot demo (replay) screen finished and proved
+
+**The result, stated plainly.** The replay is sound and its equivalence is now proved rather
+than asserted. It runs in **7.4s**, and the offline proof passed on both tested days with no
+mismatch. **No number was tuned to obtain that.**
+
+| What | Number |
+|---|---|
+| Replay wall time, 5 trading days | **7.4s** (band recompute 8.2s; literal would be 48.8s) |
+| Lookback derived from config | **267 trading days** (regime drawdown 252 + smoothing 5) |
+| Equivalence, day 20240101 and 20240105 | regime **exact**, target weights **exact** (10 compared per day) |
+| `prob_up` agreement | 50 values per day, max delta **3.33e-16** vs stated tolerance 1e-9 |
+| Look-ahead mutation | **passed** on both days (future dates 20240102, 20240108) |
+| Day-1 orders vs stored `backtest_main` | **10 / 10 match**, no quantity or price differences |
+| Warehouse SHA-256 before / after | **unchanged** |
+
+**Three defects were found in the first implementation, all the same kind: a check that
+could not fail.** All three are fixed, and each fix is now guarded by a test that was
+**verified by mutation** — reverted onto the original code and confirmed to fail.
+
+1. **The weight comparison was stored-against-stored.** `_day_output` read `target_weight`
+   from `fact_signal`, which `truncate_after` never deletes and the script never writes, so
+   both paths returned the *same stored Phase-6 rows* and would have reported "match" for
+   any pipeline whatsoever. It now calls `src.trading.rules.target_weights` — the same
+   pure function the engine and the paper bot use — on freshly computed probabilities.
+2. **The look-ahead mutation deleted the evidence.** It mutated a price *after* D and then
+   called `truncate_after`, removing the row it had just changed before recomputing. It now
+   keeps the whole history and reads only the day-D output. Its teeth are demonstrated by a
+   test that installs a leaky `compute_indicators` (tomorrow's close folded into today's
+   `sma_20`) and shows the past day **does** move.
+3. **The entry threshold was the literal `0.5`.** The selected `entry_base` is **0.504415**,
+   so the screen was counting names the strategy would have rejected, in front of an
+   examiner. It now reads `entry_base + entry_offsets[regime]`, and `target_weights` was
+   hardcoded `{}` and now carries the engine's real decisions.
+
+**A recorded number did not survive re-measurement, and is corrected.** An earlier session
+logged `build_indicators` over the full 143,481-row warehouse at **360.6s**. Re-measured on
+an idle machine it is **46.3s**; the old figure was contention. The stale claim had already
+propagated into `bot.py`'s docstring and into my own first report, and has been corrected in
+both places rather than left to be quoted again.
+
+**How long tonight's `make paper` will take: about one minute, not seven.** A timed
+rehearsal of the live job's feature path on a throwaway copy
+(`scripts/paper_rehearsal.py`) gives a mean of **60.4s per date** — `build_indicators`
+46-65s, `_extend_regime` 0-2s, `build_panel` 2.8s, `predict` 0.3s — plus the incremental
+ETL, which is network-bound. **No code was changed to speed this up**, because `AGENTS.md`
+§6 requires the full-history recompute; an incremental variant would drift on the recursive
+columns and move every number this project reports.
+
+**New market data has arrived: five trading days past the lock** (2026-10-12 to 2026-10-16,
+confirmed on `^NSEI` and `^INDIAVIX`). `make paper` would load them incrementally, then — and
+this is the part worth stating — **process only 2026-10-16**. A `paper_live` run with nothing
+processed yet starts flat at the *latest* trading date by design (R26), so the four
+intermediate days are skipped, not back-filled. That is the correct behaviour and the reason
+a live run cannot manufacture a fake history. **It has not been run.**
 
 ## 2026-10-10 — T5.6 and T5.7 results on the validation year
 
@@ -693,3 +750,8 @@ Anything you changed or could not do as written. Also add a numbered entry to `d
 | 2026-10-10 | T0.2 | `make lint` now runs `ruff format` before `ruff check --fix`, and a `format` target was added. The `lint` target's recipe changed; nothing else in the Makefile did. |
 | 2026-10-10 | T1.7 | The Makefile `smoke` recipe used `#` to comment out later-phase commands. On POSIX `sh` that is a comment; on `cmd.exe` it is not, and the target aborted with `CreateProcess failed`. Replaced with `@REM`, which both shells ignore. A real portability fix, not a workaround. |
 | 2026-10-10 | T1.7 | `scripts/build_universe.py` was added, outside the pack's `07§1` tree, to convert the NSE download into `config/nifty50_symbols.csv`. It is a manually run one-off that makes the sector mapping auditable; nothing in the ETL imports it. |
+| 2026-10-16 | Bot demo | **The dashboard has a sixth screen**, "Bot demo (replay)", appended after the five `02§6` names. Those five are unchanged, still first, still in order; `test_dashboard.py` asserts the spec list and the added list separately so neither can be quietly altered (`DECISIONS` R55). |
+| 2026-10-16 | Bot demo | **`src/dashboard/bot.py` is a second caller of `allow_test_period=True`**, admitted by `test_final_test.py` only where the same call also passes `persist=False` and `write_signals=False`. Checked with `ast` over full paths, not by text, and a second test asserts exactly one such call exists (`DECISIONS` R54). This is the only change to any Phase 6 guard, and it makes the guard narrower rather than weaker. |
+| 2026-10-16 | Bot demo | Three defects in the first implementation, all **checks that could not fail**: the weight comparison read stored `fact_signal` and so compared stored rows against themselves; the look-ahead mutation deleted the rows it had just mutated before recomputing; and the entry threshold was the literal `0.5` against a real `entry_base` of 0.504415. All fixed, each guarded by a test **verified by mutation** against the original code. |
+| 2026-10-16 | Bot demo | **A previously recorded cost was wrong and is corrected.** `build_indicators` on the full 143,481-row warehouse was logged at 360.6s; re-measured on an idle machine it is **46.3s**. The stale figure had reached `bot.py`'s docstring and was repeated in a status report before being caught. Timed rehearsal of the live feature path gives **60.4s per date**, so `make paper` is about a minute, not seven. **No code was changed**, because `AGENTS.md` §6 requires the full-history recompute. |
+| 2026-10-16 | tooling | `scripts/paper_rehearsal.py` added (outside the pack's `07§1` tree) to time the daily job's feature path on a throwaway copy. `scripts/bot_verify.py` and `scripts/probe_costs.py` had their output paths made config-derived, because `test_repo_hygiene` correctly rejects a source file that names a gitignored directory. `Fix-EncryptedContent-Portable.bat`, an unrelated tool found untracked in the repo root, was **moved out** to the parent directory and not committed. |

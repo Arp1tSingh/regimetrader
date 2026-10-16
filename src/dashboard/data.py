@@ -9,9 +9,10 @@ screen could drift from the number in `RESULTS.md`, and the two would both look 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pandas as pd
+from sqlalchemy import event
 
 from src.common.config import load_config
 from src.common.db import get_engine, read_sql
@@ -50,6 +51,36 @@ def cfg_and_engine(config: str | None = None) -> tuple[dict[str, Any], Any]:
     """Load the config and open a read connection."""
     cfg = load_config(config or "config/config.yaml")
     return cfg, get_engine(cfg)
+
+
+def readonly_engine(cfg: Mapping[str, Any]) -> Any:
+    """Open the warehouse read-only via SQLite `mode=ro`.
+
+    **This is what makes a publicly exposed dashboard safe.** The page must never be
+    able to write to the real warehouse, and the cheapest way to guarantee that is to
+    make the database itself refuse. Any write raises `sqlite3.OperationalError`
+    ("attempt to write a readonly database"); `tests/test_bot_demo.py` asserts that.
+
+    WAL is deliberately *not* enabled here: switching journal mode is itself a write.
+    """
+    from pathlib import Path
+
+    from sqlalchemy import create_engine
+
+    db_path = Path(cfg["paths"]["db"]).resolve()
+    uri = f"sqlite:///file:{db_path.as_posix()}?mode=ro&uri=true"
+    engine = create_engine(uri, future=True)
+
+    @event.listens_for(engine, "connect")
+    def _readonly(connection: Any, _record: Any) -> None:
+        cursor = connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys = ON")
+            cursor.execute("PRAGMA query_only = ON")
+        finally:
+            cursor.close()
+
+    return engine
 
 
 def empty(message: str) -> None:
