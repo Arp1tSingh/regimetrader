@@ -1,0 +1,6 @@
+# Shell scripts and systemd units must always check out with LF endings: the deployed
+# VM runs these with bash/systemd, and a CRLF byte after the shebang or a unit line
+# breaks both. (The deploy kit in deploy/ is uploaded to the VPS as-is.)
+*.sh text eol=lf
+*.service text eol=lf
+*.timer text eol=lf

@@ -1,0 +1,20 @@
+# RegimeTrader daily paper job schedule.
+# 17:00 Asia/Kolkata weekdays (NSE closes 15:30 IST; end-of-day data is published after
+# the close, so 17:00 leaves margin — same cut-off as deploy/cron.example).
+# Timezone= keeps the trigger at IST no matter what the server's system clock is set to.
+# Persistent=true re-runs a missed slot after downtime; the daily job is idempotent
+# (already-processed dates are skipped), so catch-up is safe by design.
+# Restore-and-save note: this unit assumes a persistent disk (free-tier VPS boot volume).
+# For an ephemeral runner use deploy/github_actions_daily.yml and its restore options.
+
+[Unit]
+Description=RegimeTrader daily job — weekdays 17:00 Asia/Kolkata
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 17:00:00
+Timezone=Asia/Kolkata
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

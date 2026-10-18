@@ -36,5 +36,8 @@ __pycache__/
 /config/frozen_config.smoke.yaml
 /reports/daily/
 
+# Backup copies pulled from the deployed server (contain the full warehouse DB)
+/backups/
+
 # local secrets
 .env

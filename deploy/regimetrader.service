@@ -1,0 +1,22 @@
+# RegimeTrader daily paper job — systemd oneshot, triggered by regimetrader.timer.
+# Installed at /etc/systemd/system/regimetrader.service by deploy/server_setup.sh
+# (which rewrites the User= line to the installing user). Logs land in the journal
+# plus ~/regimetrader/logs/daily.log via the wrapper.
+#
+# Manual one-off run:  systemctl start regimetrader.service
+# Scheduled weekdays 17:00 Asia/Kolkata with catch-up after downtime (persistent timer).
+# Exit-code contract mirrors src/paper/daily_job.py:
+#   0 ok / nothing-to-do · 1 config or other error · 2 data/ETL failure · 3 refused (guard).
+
+[Unit]
+Description=RegimeTrader daily paper job (Option B deploy)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=%h/regimetrader
+EnvironmentFile=-/etc/regimetrader.env
+ExecStart=/bin/bash %h/regimetrader/deploy/daily_wrapper.sh
+TimeoutStartSec=2h
