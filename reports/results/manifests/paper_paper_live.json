@@ -1,17 +1,17 @@
 {
-  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\paper\\daily_job.py --config config/config.yaml --no-etl",
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\paper\\daily_job.py --config config/config.yaml",
   "config_hash": "dace7f38d514",
   "data_range": {
     "first_date_key": 20150102,
-    "last_date_key": 20261009
+    "last_date_key": 20261016
   },
   "extra": {
     "dates": [
-      20261009
+      20261016
     ],
     "run_id": "paper_live"
   },
-  "git_commit": "753e98a6e6554fdb03dcc4c3b56899ec85875e71",
+  "git_commit": "67361d501a8fdc3bce4136510e6b04a8d48a9cf0",
   "models_used": [],
   "package_versions": {
     "numpy": "2.5.3",
@@ -22,5 +22,5 @@
   },
   "run_id": "paper_paper_live",
   "seed": 42,
-  "timestamp": "2026-10-11T10:11:49+00:00"
+  "timestamp": "2026-10-17T20:00:04+00:00"
 }
