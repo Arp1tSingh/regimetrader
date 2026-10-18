@@ -162,9 +162,11 @@ reprocessed. Scheduling examples are in `deploy/cron.example` and
 make dashboard
 ```
 
-Five read-only screens: market overview, OLAP explorer, today's signals, backtest results,
-model diagnostics. It reads the warehouse and the result CSVs and **recomputes no
-metric**, so a number on screen cannot drift from the same number in `RESULTS.md`.
+Six screens (DECISIONS R55): the five read-only screens — market overview, OLAP
+explorer, today's signals, backtest results, model diagnostics — plus the read-only
+Bot demo (replay) screen below. It reads the warehouse and the result CSVs and
+**recomputes no metric**, so a number on screen cannot drift from the same number in
+`RESULTS.md`.
 
 The target passes `--server.headless true`, so **Streamlit will not auto-open your
 browser** — it prints the URL to open instead:
@@ -217,6 +219,10 @@ cannot alter anything.
 The **Bot demo (replay)** screen re-runs the frozen strategy over a few test-period days
 on a **temporary copy** of the warehouse, so a visitor can watch the bot decide and then
 check that its first-day orders match the recorded `backtest_main` run.
+
+Two standing caveats on what it shows: the 50 names are today's constituents applied
+backwards (a static universe — survivorship bias), and prices are split/dividend
+adjusted, so share counts are illustrative rather than real tradable quantities.
 
 Because the dashboard is publicly reachable, the screen is built for an anonymous
 visitor:
@@ -297,6 +303,18 @@ clean-clone verification was performed for this handoff — see §7.
 ## 5. Limitations and honesty
 
 These are the things that would be easiest to hide and that a reader most needs.
+
+### The universe is today's Nifty 50, held fixed
+
+`config/nifty50_symbols.csv` is one static list stamped "as of 2026-10-10", and the
+warehouse records no point-in-time index membership. Every symbol is loaded over the
+whole period, so the backtests and the paper bot trade today's names — including BSE
+Ltd, which entered the Nifty 50 only on 2026-09-30 (replacing Wipro) — as though they
+had been constituents since 2015, while names that left the index earlier are absent
+entirely. That survivorship bias is a real limitation: the results describe what these
+fifty constants would have produced, not what a contemporaneous investor holding the
+index of the day could have. The Bot demo (replay) screen carries a one-line version
+of this note.
 
 ### The test-once protocol, and the `run_count: 2`
 
@@ -431,7 +449,7 @@ the column as a per-year figure.
 | `src/` | `etl`, `features`, `olap`, `regime`, `models`, `trading`, `backtest`, `paper`, `dashboard` |
 | `tests/` | 503 tests |
 | `reports/results/` | Result tables, `trial_log.csv`, `TEST_RUN_LOCK.json`, `RESULTS.md`, `leakage_checklist.md` |
-| `deploy/` | Cron and GitHub Actions **examples** — nothing installed |
+| `deploy/` | Cron and GitHub Actions **examples** — nothing installed. `OPTION_B_FREE.md` is the prepared free-tier VPS deployment kit (Option B): systemd timer, wrapper, snapshot and backup scripts |
 | `requirements.lock` | Exact pinned environment |
 
 ---

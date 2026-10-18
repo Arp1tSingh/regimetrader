@@ -890,6 +890,68 @@ def test_target_weights_come_from_the_engine_not_a_placeholder() -> None:
     assert payload["days"][0]["entry_threshold"] == 0.504415
 
 
+def test_the_days_holdings_are_the_cumulative_book_not_only_the_day_fills() -> None:
+    """The bug this fixes: a partial-trade day showed only the symbols traded that day.
+
+    Under the old `_day_from_result`, holdings were rebuilt from the day's own fills
+    and reset each day, so a day that sold one name out of ten showed a one-line
+    "holdings" panel. `run_replay` now maintains the cumulative book and passes it in;
+    every day's view must show the whole portfolio as of that day's last fill.
+    """
+    day_one = [
+        {"symbol": "ASIANPAINT.NS", "side": "BUY", "reason": "", "quantity": 10, "fill_price": 1.0,
+         "date_key": 20240102},
+        {"symbol": "ITC.NS", "side": "BUY", "reason": "", "quantity": 20, "fill_price": 2.0,
+         "date_key": 20240102},
+        {"symbol": "TITAN.NS", "side": "BUY", "reason": "", "quantity": 5, "fill_price": 3.0,
+         "date_key": 20240102},
+    ]
+    partially_traded_day = [
+        {"symbol": "ITC.NS", "side": "SELL", "reason": "EXIT", "quantity": 20, "fill_price": 2.5},
+    ]
+
+    book: dict[str, int] = {}
+    bot.apply_orders(book, day_one)
+    first = bot._day_from_result(
+        20240102, pd.DataFrame(), [], [], regime="BULL", holdings=dict(book)
+    )
+    assert first.holdings == {"ASIANPAINT.NS": 10, "ITC.NS": 20, "TITAN.NS": 5}
+
+    bot.apply_orders(book, partially_traded_day)
+    second = bot._day_from_result(
+        20240103, pd.DataFrame(), [], [], regime="BULL", holdings=dict(book)
+    )
+    # The day traded one name, yet the panel shows the full remaining book.
+    assert partially_traded_day[0]["symbol"] not in second.holdings
+    assert second.holdings == {"ASIANPAINT.NS": 10, "TITAN.NS": 5}
+
+    # Omitting `holdings` keeps the legacy single-day behaviour for direct callers.
+    legacy = bot._day_from_result(
+        20240102,
+        pd.DataFrame(day_one),  # trades frame carrying day one's orders
+        [],
+        [],
+        regime="BULL",
+    )
+    assert legacy.holdings == {"ASIANPAINT.NS": 10, "ITC.NS": 20, "TITAN.NS": 5}
+    assert [order["symbol"] for order in legacy.orders] == ["ASIANPAINT.NS", "ITC.NS", "TITAN.NS"]
+
+
+def test_run_replay_maintains_the_cumulative_book() -> None:
+    """Structural: the loop must carry one book across days and feed each day a copy.
+
+    A per-day rebuild inside `_day_from_result` would reintroduce the bug silently, so
+    the wiring itself is pinned, in the file's usual source-inspection style.
+    """
+    body = inspect.getsource(bot.run_replay)
+    start = body.index("book: dict[str, int] = {}")
+    loop = body[start:]
+    assert "apply_orders(book, day_orders)" in loop
+    assert "holdings=dict(book)" in loop
+    # The book is hoisted before the loop and passed per day.
+    assert loop.index("holdings=dict(book)") > 0
+
+
 def test_the_screen_renders_the_weights_it_receives() -> None:
     """The Streamlit screen must actually draw the weights, not just hold them."""
     app_source = (REPO_ROOT / "src" / "dashboard" / "app.py").read_text(encoding="utf-8")

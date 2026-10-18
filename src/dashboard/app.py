@@ -1,8 +1,10 @@
 """RegimeTrader dashboard (`spec 02` section 6).
 
-Five screens, all read-only, all offline: nothing here writes to the warehouse and
-nothing recomputes a reported metric. The numbers come from the CSVs the authorised runs
-produced, so the screen and `RESULTS.md` cannot disagree.
+Six screens (DECISIONS R55): the five read-only screens of `spec 02` §6 in that order,
+plus the read-only Bot demo (replay) screen that R54 added. All are read-only and
+offline: nothing here writes to the warehouse and nothing recomputes a reported metric.
+The numbers come from the CSVs the authorised runs produced, so the screen and
+`RESULTS.md` cannot disagree.
 
 The dashboard is required to show the negative results honestly. Two rules are baked in
 rather than left to the author of any one chart:
@@ -531,6 +533,17 @@ def screen_bot(cfg: dict[str, Any], engine: Any) -> None:
         return
 
     st.caption(
+        "Universe note: the 50 names are today's Nifty 50 constituents held fixed "
+        "across all of history, so what the bot could own in 2024 reflects this list, "
+        "not the index as it was then (survivorship bias; no point-in-time membership "
+        "is stored)."
+    )
+    st.caption(
+        "Price note: prices are split- and dividend-adjusted, so share counts on this "
+        "screen are illustrative rather than real tradable quantities."
+    )
+
+    st.caption(
         f"Safety limits: the warehouse is opened read-only, every run works on a "
         f"temporary copy that is deleted afterwards, only one run happens at a time, "
         f"and only these {len(allowed)} start dates can be chosen. "
@@ -667,8 +680,8 @@ def _render_bot(run: Any) -> None:
                 st.write("No orders on this day.")
             else:
                 st.dataframe(pd.DataFrame(day.orders), width="stretch")
+            st.markdown("**Portfolio after this day's fills:**")
             if day.holdings:
-                st.markdown("**Holdings after the fill:**")
                 st.dataframe(
                     pd.DataFrame(
                         [
@@ -678,6 +691,8 @@ def _render_bot(run: Any) -> None:
                     ),
                     width="stretch",
                 )
+            else:
+                st.write("No positions owned after this day's fills.")
 
     check = run.first_day_check
     st.markdown("### No-hindsight check (day 1)")

@@ -572,12 +572,19 @@ def run_replay(
                         str(r.symbol): float(r.target_weight) for r in group.itertuples()
                     }
 
+            book: dict[str, int] = {}
             for index, day_key in enumerate(window):
                 if deadline_check is not None:
                     deadline_check()
                 day_rows = [r for r in signal_rows if r["d"] == day_key]
                 day_regime = regime_labels.get(int(regimes.get(int(day_key), 0) or 0), "")
                 day_equity = equity[equity["date_key"] == day_key] if not equity.empty else None
+                # The cumulative portfolio after this day's fills, carried across the
+                # whole window. The old per-day rebuild showed only the day's traded
+                # symbols under a "Holdings after the fill" label, which misdescribed
+                # a partial-trade day.
+                day_orders = _orders_for(trades, day_key) if not trades.empty else []
+                apply_orders(book, day_orders)
                 run.days.append(
                     _day_from_result(
                         day_key,
@@ -588,6 +595,7 @@ def run_replay(
                         day_equity.iloc[-1] if day_equity is not None and len(day_equity) else None,
                         weights_by_day.get(int(day_key), {}),
                         entry_threshold(cfg, day_regime),
+                        holdings=dict(book),
                     )
                 )
                 if per_day_check is not None:
@@ -621,6 +629,28 @@ def _orders_for(trades: pd.DataFrame, date_key: int) -> list[dict[str, Any]]:
     ]
 
 
+def apply_orders(book: dict[str, int], orders: list[dict[str, Any]]) -> dict[str, int]:
+    """Apply one day's fills to a running position book, in place.
+
+    BUY raises the quantity, SELL lowers it; a quantity that reaches zero or below
+    removes the name. Used by `run_replay` to keep the cumulative book across the
+    replay window and, when `holdings` is not supplied, by `_day_from_result`'s
+    legacy single-day path.
+    """
+    for order in orders:
+        symbol = str(order["symbol"])
+        quantity = int(order["quantity"])
+        if str(order["side"]) == "BUY":
+            book[symbol] = book.get(symbol, 0) + quantity
+        else:
+            remaining = book.get(symbol, 0) - quantity
+            if remaining > 0:
+                book[symbol] = remaining
+            else:
+                book.pop(symbol, None)
+    return book
+
+
 def _day_from_result(
     day_key: int,
     trades: pd.DataFrame,
@@ -630,6 +660,7 @@ def _day_from_result(
     equity_row: Any = None,
     weights: dict[str, float] | None = None,
     threshold: float | None = None,
+    holdings: dict[str, int] | None = None,
 ) -> DayResult:
     """Build one day's view from the engine's trades for that day and its equity row.
 
@@ -641,20 +672,19 @@ def _day_from_result(
     `weights` are the targets the engine actually computed for this decision
     (`BacktestResult.signals`), not a placeholder: a previous version passed
     `target_weights={}` unconditionally, so the panel could never show them.
+
+    `holdings` is the **cumulative** portfolio after this day's fills, maintained
+    across the replay window by `run_replay`. When it is omitted (legacy callers and
+    direct tests), the old single-day behaviour applies: the book is rebuilt from this
+    day's own fills alone, which for a day whose symbols were partially traded showed
+    only those symbols.
     """
     orders = _orders_for(trades, day_key)
 
-    holdings: dict[str, int] = {}
-    for order in orders:
-        qty = int(order["quantity"])
-        if order["side"] == "BUY":
-            holdings[order["symbol"]] = holdings.get(order["symbol"], 0) + qty
-        else:
-            remaining = holdings.get(order["symbol"], 0) - qty
-            if remaining > 0:
-                holdings[order["symbol"]] = remaining
-            else:
-                holdings.pop(order["symbol"], None)
+    if holdings is None:
+        book = apply_orders({}, orders)
+    else:
+        book = dict(holdings)
 
     cash = positions_value = equity = 0.0
     if equity_row is not None:
@@ -679,7 +709,7 @@ def _day_from_result(
         cash=cash,
         positions_value=positions_value,
         equity=equity,
-        holdings=holdings,
+        holdings=book,
         entry_threshold=threshold,
     )
 

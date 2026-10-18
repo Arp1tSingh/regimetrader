@@ -135,5 +135,5 @@ Full CLI contracts: `docs/spec/07_project_structure.md` section 5.
 - Real-data pipeline run: warehouse loaded, all hard data-quality checks pass.
 - `reports/results/` contains the results tables, trial log, run manifests and the leakage checklist; `reports/figures/` contains the figures listed in `docs/spec/06` section 10.
 - The daily paper-trading job runs end to end and a replay matches the backtest (`docs/spec/TESTS.md`).
-- Dashboard starts and shows all five screens.
+- Dashboard starts and shows all six screens (the five read-only screens plus the Bot demo replay).
 - `README.md` documents setup, commands and the disclaimer.

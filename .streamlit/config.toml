@@ -8,3 +8,10 @@
 # trusting that it worked. See `DECISIONS` R50.
 [browser]
 gatherUsageStats = false
+
+[client]
+# Hide the "Deploy" button and the developer menu for the viva demo (R50-adjacent
+# polish): a visitor gets exactly what a read-only app should look like. "viewer"
+# changes no behaviour beyond trimming Streamlit's dev chrome, and applies equally to
+# `make dashboard` and the `make demo` tunnel window (same working directory).
+toolbarMode = "viewer"
