@@ -1,0 +1,29 @@
+{
+  "command_line": "C:\\Users\\Admin\\Projects\\DWM\\regimetrader_pack\\src\\etl\\pipeline.py --config config\\config.yaml",
+  "config_hash": "f50f47a66c6f",
+  "data_range": {
+    "first_date_key": 20150102,
+    "last_date_key": 20261028
+  },
+  "extra": {
+    "mode": "INCREMENTAL",
+    "rows_extracted": 624,
+    "rows_loaded": 624,
+    "rows_rejected": 0,
+    "source": "yfinance",
+    "start_date": "2026-10-11",
+    "symbols": 52
+  },
+  "git_commit": "d1cf05833bd38f7d667ef2a906b7f40fbd380d24",
+  "models_used": [],
+  "package_versions": {
+    "numpy": "2.5.3",
+    "pandas": "3.0.6",
+    "python": "3.14.8",
+    "scikit-learn": "1.9.1",
+    "xgboost": "3.4.1"
+  },
+  "run_id": "etl_2026-10-28",
+  "seed": 42,
+  "timestamp": "2026-10-28T14:36:05+00:00"
+}
