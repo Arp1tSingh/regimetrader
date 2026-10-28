@@ -188,6 +188,175 @@ def test_the_paper_disclaimer_is_stated() -> None:
     assert "does not demonstrate" in text
 
 
+# --------------------------------------------------------------- signals
+
+
+def _paper_decision_warehouse(tmp_path: Path) -> tuple[Any, dict[str, Any]]:
+    """A tiny warehouse with an older target date and a newer flat decision."""
+    from sqlalchemy import text
+
+    from src.common.db import init_db
+
+    cfg = load_config(str(REPO_ROOT / "config" / "config.smoke.yaml"))
+    cfg["paths"]["db"] = str(tmp_path / "paper.db")
+    cfg["paths"]["frozen_config"] = str(tmp_path / "frozen.yaml")
+    for key in ("results", "models", "figures", "daily"):
+        cfg["paths"][key] = str(tmp_path / key)
+    for key in ("results", "models"):
+        Path(cfg["paths"][key]).mkdir(parents=True, exist_ok=True)
+
+    engine = get_engine(cfg)
+    init_db(engine)
+    with engine.begin() as conn:
+        for date_key, full_date, day_name, day_of_week in (
+            (20261027, "2026-10-27", "Tuesday", 1),
+            (20261028, "2026-10-28", "Wednesday", 2),
+        ):
+            conn.execute(
+                text(
+                    "INSERT INTO dim_date (date_key, full_date, day_of_week, day_name, "
+                    "week_of_year, month, month_name, quarter, year, is_trading_day, "
+                    "is_month_end) VALUES (:d, :f, :w, :n, 44, 10, 'October', 4, 2026, 1, 0)"
+                ),
+                {"d": date_key, "f": full_date, "w": day_of_week, "n": day_name},
+            )
+        conn.execute(
+            text(
+                "INSERT INTO dim_stock (stock_key, symbol, company_name, sector, industry, "
+                "instrument_type) VALUES "
+                "(1, 'AAA.NS', 'AAA', 'IT', 'IT', 'EQUITY'), "
+                "(2, 'BBB.NS', 'BBB', 'FMCG', 'FMCG', 'EQUITY'), "
+                "(3, '^NSEI', 'Nifty 50', 'INDEX', NULL, 'INDEX')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO dim_model (model_key, model_name, version, trained_through, "
+                "params_json) VALUES (1, 'rf', 'wf2026', '2025-12-31', '{}')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO fact_price (date_key, stock_key, open_price, high_price, "
+                "low_price, close_price, volume, is_flagged) "
+                "VALUES (20261028, 3, 100, 101, 99, 100, 0, 0)"
+            )
+        )
+        for date_key in (20261027, 20261028):
+            conn.execute(
+                text(
+                    "INSERT INTO fact_market_regime (date_key, regime_key, cluster_id, "
+                    "mkt_return_20d, mkt_vol_20d, india_vix, mkt_drawdown) "
+                    "VALUES (:d, 2, 1, 0.0, 0.1, 15.0, 0.0)"
+                ),
+                {"d": date_key},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO fact_portfolio_daily (run_id, date_key, cash, "
+                    "positions_value, equity, daily_return, drawdown) "
+                    "VALUES ('paper_live', :d, 1000000, 0, 1000000, 0, 0)"
+                ),
+                {"d": date_key},
+            )
+            for stock_key, prob in ((1, 0.61 if date_key == 20261027 else 0.52), (2, 0.48)):
+                conn.execute(
+                    text(
+                        "INSERT INTO fact_signal (date_key, stock_key, model_key, "
+                        "regime_key, prob_up, signal, target_weight) "
+                        "VALUES (:d, :s, 1, 2, :p, 0, 0.0)"
+                    ),
+                    {"d": date_key, "s": stock_key, "p": prob},
+                )
+        # The older decision had one target; the newer decision was flat.
+        conn.execute(
+            text(
+                "INSERT INTO pending_target (run_id, decision_date_key, stock_key, "
+                "target_weight, prob_up) VALUES ('paper_live', 20261027, 1, 0.10, 0.61)"
+            )
+        )
+    return engine, cfg
+
+
+def test_a_flat_decision_is_not_missing_data(tmp_path: Path) -> None:
+    """A processed date with no pending rows is a real decision to be flat."""
+    engine, _cfg = _paper_decision_warehouse(tmp_path)
+    try:
+        assert dd.latest_signals_date(engine) == 20261028
+        signals = dd.latest_signals(engine)
+        assert len(signals) == 2
+        assert set(signals["symbol"]) == {"AAA.NS", "BBB.NS"}
+        assert (signals["target_weight"] == 0).all()
+    finally:
+        engine.dispose()
+
+
+def test_latest_signals_are_filtered_to_the_latest_decision_date(tmp_path: Path) -> None:
+    """Targets from an older date must not leak into today's page."""
+    engine, _cfg = _paper_decision_warehouse(tmp_path)
+    try:
+        older = dd.latest_signals(engine, date_key=20261027)
+        latest = dd.latest_signals(engine, date_key=20261028)
+        assert older.loc[older["symbol"] == "AAA.NS", "target_weight"].iloc[0] == pytest.approx(
+            0.10
+        )
+        assert (latest["target_weight"] == 0).all()
+    finally:
+        engine.dispose()
+
+
+def test_the_signals_screen_renders_a_flat_decision(tmp_path: Path) -> None:
+    """The page must show the flat decision and every scored name, not an empty state."""
+    import yaml
+
+    engine, cfg = _paper_decision_warehouse(tmp_path)
+    try:
+        config_file = tmp_path / "paper_config.yaml"
+        config_file.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+        at = _render(str(config_file), "Today's signals")
+        assert not at.exception
+        text = _screen_text(at)
+        assert "flat decision" in text
+        assert "no `paper_live` decision" not in text
+        assert "2026-10-28" in text
+        assert "aaa.ns" in text and "bbb.ns" in text
+        assert "hold" in text
+
+        frames = list(at.dataframe)
+        assert frames, "the flat decision must still show the scored names"
+        actions = set(frames[0].value["action"])
+        assert actions <= {"BUY", "HOLD"}, "the page must not invent SELL actions"
+    finally:
+        engine.dispose()
+
+
+def test_the_signals_screen_warns_when_the_decision_is_stale(tmp_path: Path) -> None:
+    """A stored decision older than the latest market bar must not look current."""
+    import yaml
+    from sqlalchemy import text
+
+    engine, cfg = _paper_decision_warehouse(tmp_path)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM fact_portfolio_daily "
+                    "WHERE run_id = 'paper_live' AND date_key = 20261028"
+                )
+            )
+        config_file = tmp_path / "stale_config.yaml"
+        config_file.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+        at = _render(str(config_file), "Today's signals")
+        assert not at.exception
+        text = _screen_text(at)
+        assert "not today's decision" in text
+        assert "make paper" in text
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.slow
 def test_every_number_quoted_in_the_caveats_matches_summary_test() -> None:
     """The caveats are prose, so nothing stops them drifting from the stored results.

@@ -162,11 +162,13 @@ reprocessed. Scheduling examples are in `deploy/cron.example` and
 make dashboard
 ```
 
-Six screens (DECISIONS R55): the five read-only screens — market overview, OLAP
-explorer, today's signals, backtest results, model diagnostics — plus the read-only
+Six screens (DECISIONS R55): the five read-only screens - market overview, OLAP
+explorer, today's signals, backtest results, model diagnostics - plus the read-only
 Bot demo (replay) screen below. It reads the warehouse and the result CSVs and
 **recomputes no metric**, so a number on screen cannot drift from the same number in
-`RESULTS.md`.
+`RESULTS.md`. Today's signals uses the latest `paper_live` date recorded in
+`fact_portfolio_daily`; when the strategy decided to be flat, the page says so and shows
+every scored name with a zero target weight instead of an empty state.
 
 The target passes `--server.headless true`, so **Streamlit will not auto-open your
 browser** — it prints the URL to open instead:

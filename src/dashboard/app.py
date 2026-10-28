@@ -162,9 +162,7 @@ def screen_market(cfg: dict[str, Any], engine: Any) -> None:
         st.metric("India VIX", "n/a" if latest_vix is None else ui.fmt_num(latest_vix, 2))
     with k4:
         changes = (
-            int((regime_series != regime_series.shift()).sum() - 1)
-            if len(regime_series)
-            else 0
+            int((regime_series != regime_series.shift()).sum() - 1) if len(regime_series) else 0
         )
         st.metric("Regime changes", f"{max(changes, 0):,}")
 
@@ -444,39 +442,80 @@ def _heat_map(heat: pd.DataFrame) -> Any:
 
 
 def screen_signals(cfg: dict[str, Any], engine: Any) -> None:
-    """Today's paper signals."""
+    """Latest stored paper decision, including an honest flat state."""
     ui.section("Today's signals", "Latest stored paper_live decision")
     st.warning(dd.PAPER_DISCLAIMER)
 
     date_key = dd.latest_signals_date(engine)
+    latest_market = dd.latest_data_key(engine)
     if date_key is None:
         ui.callout(
-            "No `paper_live` decision has been stored yet. The first run declined to "
-            "process the lock's `data_end_date`, so nothing has been decided. This screen "
-            "shows stored decisions, never a live feed.",
+            "No `paper_live` decision has been stored yet. The daily paper job has not "
+            "committed a decision. This screen shows stored decisions, never a live feed.",
             "info",
         )
         return
 
-    st.write(f"Decision date: **{_date_str(date_key)}**")
-    signals = dd.latest_signals(engine)
-    if signals.empty:
-        dd.empty("That decision stored no target weights (the strategy was flat).")
-        return
+    model = str(cfg["strategy"].get("selected_model") or cfg["tuning"]["models"][0])
+    signals = dd.latest_signals(engine, date_key=date_key, model=model)
+    regime = dd.regime_for_date(engine, date_key)
 
-    gross = float(signals["target_weight"].fillna(0.0).sum())
-    largest = signals.sort_values("target_weight", ascending=False).iloc[0]
     k1, k2, k3 = st.columns(3)
     with k1:
-        st.metric("Names with a target", f"{len(signals):,}")
+        st.metric("Decision date", _date_str(date_key))
     with k2:
-        st.metric("Gross target exposure", _fmt_pct(gross, signed=False))
+        st.metric("Latest market bar", _date_str(latest_market))
     with k3:
-        st.metric(
-            "Largest target",
-            str(largest["symbol"]),
-            _fmt_pct(float(largest["target_weight"]), signed=False),
+        st.metric("Regime at decision", regime or "n/a")
+
+    if latest_market is not None and int(date_key) < int(latest_market):
+        ui.callout(
+            f"<strong>NOT TODAY'S DECISION</strong> - the latest stored decision is "
+            f"{_date_str(date_key)}, but the latest market bar is {_date_str(latest_market)}. "
+            "Run `make paper` to store a decision for the newer session.",
+            "warn",
         )
+    else:
+        st.caption(
+            f"Decision stored at the {_date_str(date_key)} close; orders would fill at "
+            "the next open. Stored paper decision, not a live quote."
+        )
+    st.caption(f"Model: `{model}` · source: `{dd.PAPER_RUN_ID}`")
+
+    if signals.empty:
+        dd.empty("That decision stored no probabilities or target weights.")
+        return
+
+    positive = signals[signals["target_weight"] > 0].copy()
+    gross = float(positive["target_weight"].sum()) if not positive.empty else 0.0
+
+    if positive.empty:
+        ui.callout(
+            "<strong>FLAT DECISION</strong> - the strategy selected no positive target "
+            "weights. The target book is cash; this is a real decision, not missing data. "
+            "No SELL instruction is shown.",
+            "info",
+        )
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            st.metric("BUY targets", "0")
+        with k2:
+            st.metric("Gross target exposure", _fmt_pct(0.0, signed=False))
+        with k3:
+            st.metric("Largest target", "n/a")
+    else:
+        largest = positive.sort_values("target_weight", ascending=False).iloc[0]
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            st.metric("BUY targets", f"{len(positive):,}")
+        with k2:
+            st.metric("Gross target exposure", _fmt_pct(gross, signed=False))
+        with k3:
+            st.metric(
+                "Largest target",
+                str(largest["symbol"]),
+                _fmt_pct(float(largest["target_weight"]), signed=False),
+            )
 
     shown = signals.copy()
     shown["action"] = shown["target_weight"].map(lambda w: "BUY" if float(w) > 0 else "HOLD")
@@ -490,13 +529,20 @@ def screen_signals(cfg: dict[str, Any], engine: Any) -> None:
             "prob_up": "prob_up",
         }
     )
-    st.dataframe(shown[["symbol", "action", "target weight", "prob_up"]], width="stretch")
-    st.caption(
-        "The stored `pending_target` table has no action field. **BUY** means a positive "
-        "target weight; **HOLD** includes zero and is not a sell instruction. No live "
-        "market quote is involved."
+    st.dataframe(
+        shown[["symbol", "action", "target weight", "prob_up"]],
+        width="stretch",
+        hide_index=True,
     )
-    st.plotly_chart(_signal_weights_chart(signals), width="stretch", key="signal_weights")
+    st.caption(
+        "All names scored for this decision. The stored `pending_target` table has no "
+        "action field. **BUY** means a positive target weight; **HOLD** includes zero and "
+        "is not a sell instruction. No live market quote is involved."
+    )
+    if not positive.empty:
+        st.plotly_chart(_signal_weights_chart(positive), width="stretch", key="signal_weights")
+    else:
+        st.caption("No positive target weights to chart; the target book is flat.")
 
 
 def _signal_weights_chart(signals: pd.DataFrame) -> Any:
@@ -590,9 +636,7 @@ def screen_results(cfg: dict[str, Any], engine: Any) -> None:
         with equity_tab:
             st.plotly_chart(_equity_chart(engine, runs, labels), width="stretch", key="equity")
         with drawdown_tab:
-            st.plotly_chart(
-                _drawdown_chart(engine, runs, labels), width="stretch", key="drawdown"
-            )
+            st.plotly_chart(_drawdown_chart(engine, runs, labels), width="stretch", key="drawdown")
         st.caption(
             "Every baseline is plotted beside the strategy over the **whole** stored "
             "period. No window is trimmed to flatter the strategy."
@@ -909,10 +953,7 @@ def screen_bot(cfg: dict[str, Any], engine: Any) -> None:
         f"time, and no free text reaches a query."
     )
 
-    labels = {
-        f"Start {index + 1} · {ui.fmt_date(day)}": day
-        for index, day in enumerate(allowed)
-    }
+    labels = {f"Start {index + 1} · {ui.fmt_date(day)}": day for index, day in enumerate(allowed)}
     choice = st.selectbox("Start day", list(labels))
     start_date = labels[choice]
 
@@ -1052,9 +1093,7 @@ def _render_bot(
         selected = st.selectbox(
             "Inspect a day",
             options,
-            format_func=lambda index: (
-                f"Day {index + 1} · {ui.fmt_date(run.days[index].date_key)}"
-            ),
+            format_func=lambda index: f"Day {index + 1} · {ui.fmt_date(run.days[index].date_key)}",
             key=day_key,
         )
         _render_day_detail(run.days[selected])

@@ -126,9 +126,7 @@ def index_and_regimes(
     return frame if limit_days is None else frame.iloc[::-1]
 
 
-def vix_series(
-    cfg: dict[str, Any], engine: Any, limit_days: int | None = None
-) -> pd.DataFrame:
+def vix_series(cfg: dict[str, Any], engine: Any, limit_days: int | None = None) -> pd.DataFrame:
     """India VIX close, oldest first. `limit_days=None` means the full history."""
     sql = (
         "SELECT p.date_key AS date_key, p.close_price AS close FROM fact_price p "
@@ -253,27 +251,127 @@ def stocks_in_sector_quarter(engine: Any, sector: str, year: int, quarter: int) 
 
 # ---------------------------------------------------------------- signals
 
+#: The paper run whose stored decision the dashboard shows.
+PAPER_RUN_ID = "paper_live"
 
-def latest_signals(engine: Any) -> pd.DataFrame:
-    """`prob_up`, action and target weight from the most recent `paper_live` decision."""
+_SIGNAL_COLUMNS = ["date_key", "symbol", "target_weight", "prob_up"]
+
+
+def latest_signals_date(engine: Any, run_id: str = PAPER_RUN_ID) -> int | None:
+    """The latest date a paper run actually processed.
+
+    `fact_portfolio_daily` is the authoritative marker, not `pending_target`: a flat
+    decision deliberately stores **no** pending-target rows, so a MAX over that table
+    would report "no decision" for a real decision to hold cash.
+    """
+    frame = read_sql(
+        engine,
+        "SELECT MAX(date_key) AS m FROM fact_portfolio_daily WHERE run_id = :r",
+        {"r": run_id},
+    )
+    if frame.empty or frame["m"].iloc[0] is None:
+        return None
+    return int(frame["m"].iloc[0])
+
+
+def latest_signals(
+    engine: Any,
+    date_key: int | None = None,
+    model: str | None = None,
+    run_id: str = PAPER_RUN_ID,
+) -> pd.DataFrame:
+    """Stored probabilities and target weights for one paper decision.
+
+    Returns one row per stock the paper job scored. A name the strategy did not select
+    has `target_weight` 0.0 rather than disappearing, so a flat decision is visible
+    instead of looking like missing data. `prob_up` comes from `fact_signal`; the target
+    weight comes from `pending_target` for the same decision date.
+
+    Args:
+        engine: Read-only warehouse engine.
+        date_key: Decision date. Defaults to the latest processed paper date.
+        model: Model name to prefer (usually `strategy.selected_model`). When omitted,
+            the model with the most rows for that date is used.
+        run_id: Paper run identifier.
+    """
+    if date_key is None:
+        date_key = latest_signals_date(engine, run_id)
+    if date_key is None:
+        return pd.DataFrame(columns=_SIGNAL_COLUMNS)
+
+    model_key = _signal_model_key(engine, int(date_key), model)
+    if model_key is not None:
+        frame = read_sql(
+            engine,
+            "SELECT f.date_key AS date_key, s.symbol AS symbol, "
+            "       COALESCE(p.target_weight, 0.0) AS target_weight, "
+            "       f.prob_up AS prob_up "
+            "FROM fact_signal f "
+            "JOIN dim_stock s ON s.stock_key = f.stock_key "
+            "LEFT JOIN pending_target p "
+            "  ON p.run_id = :r AND p.decision_date_key = f.date_key "
+            " AND p.stock_key = f.stock_key "
+            "WHERE f.date_key = :d AND f.model_key = :k "
+            "ORDER BY target_weight DESC, f.prob_up DESC, s.symbol",
+            {"r": run_id, "d": int(date_key), "k": int(model_key)},
+        )
+        if not frame.empty:
+            return frame
+
+    # Fallback for an older warehouse that stored targets but not probabilities.
     return read_sql(
         engine,
         "SELECT p.decision_date_key AS date_key, s.symbol AS symbol, "
         "       p.target_weight AS target_weight, p.prob_up AS prob_up "
         "FROM pending_target p JOIN dim_stock s ON s.stock_key = p.stock_key "
-        "WHERE p.run_id = :r ORDER BY p.target_weight DESC, s.symbol",
-        {"r": "paper_live"},
+        "WHERE p.run_id = :r AND p.decision_date_key = :d "
+        "ORDER BY p.target_weight DESC, s.symbol",
+        {"r": run_id, "d": int(date_key)},
     )
 
 
-def latest_signals_date(engine: Any) -> int | None:
+def _signal_model_key(engine: Any, date_key: int, model: str | None) -> int | None:
+    """Pick the stored model version with the most rows for one decision date.
+
+    The configured model is preferred. If that model has no rows for the date (for
+    example a smoke config whose selected model is not the one the paper job stored),
+    fall back to whichever stored model has the most rows rather than showing a false
+    "no signals" message.
+    """
+    if model:
+        frame = read_sql(
+            engine,
+            "SELECT f.model_key AS k FROM fact_signal f "
+            "JOIN dim_model m ON m.model_key = f.model_key "
+            "WHERE f.date_key = :d AND m.model_name = :m "
+            "GROUP BY f.model_key ORDER BY COUNT(*) DESC, f.model_key LIMIT 1",
+            {"d": int(date_key), "m": str(model)},
+        )
+        if not frame.empty and frame["k"].iloc[0] is not None:
+            return int(frame["k"].iloc[0])
+
     frame = read_sql(
         engine,
-        "SELECT MAX(decision_date_key) AS m FROM pending_target WHERE run_id = 'paper_live'",
+        "SELECT model_key AS k FROM fact_signal WHERE date_key = :d "
+        "GROUP BY model_key ORDER BY COUNT(*) DESC, model_key LIMIT 1",
+        {"d": int(date_key)},
     )
-    if frame.empty or frame["m"].iloc[0] is None:
+    if frame.empty or frame["k"].iloc[0] is None:
         return None
-    return int(frame["m"].iloc[0])
+    return int(frame["k"].iloc[0])
+
+
+def regime_for_date(engine: Any, date_key: int) -> str | None:
+    """The smoothed regime label stored for one date, or None when absent."""
+    frame = read_sql(
+        engine,
+        "SELECT r.regime_label AS regime FROM fact_market_regime m "
+        "JOIN dim_regime r ON r.regime_key = m.regime_key WHERE m.date_key = :d",
+        {"d": int(date_key)},
+    )
+    if frame.empty:
+        return None
+    return str(frame["regime"].iloc[0])
 
 
 # ---------------------------------------------------------------- results
