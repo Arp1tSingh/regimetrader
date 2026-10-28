@@ -345,7 +345,10 @@ def fmt_inr(value: Any, *, decimals: int = 0, compact: bool = False) -> str:
         return f"{number / 1_00_000:+.2f} L" if number else "₹0"
 
     sign = "-" if number < 0 else ""
-    text = f"{abs(number):,.{decimals}f}"
+    # Format without grouping first: the Indian grouping below inserts the commas.
+    # Pre-grouping with `,` leaves them in `rest` and produces output like
+    # ``₹1,,04,3,,942`` instead of ``₹10,43,942``.
+    text = f"{abs(number):.{decimals}f}"
     integer, dot, fraction = text.partition(".")
     if len(integer) > 3:
         last_three = integer[-3:]

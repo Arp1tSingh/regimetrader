@@ -20,6 +20,7 @@ from src.common.config import load_config
 from src.common.db import get_engine, read_sql
 from src.dashboard import app as dashboard
 from src.dashboard import data as dd
+from src.dashboard import ui as dashboard_ui
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,6 +42,30 @@ def _render(config: str, screen: str) -> Any:
             os.environ.pop("RT_DASH_CONFIG", None)
         else:
             os.environ["RT_DASH_CONFIG"] = previous
+
+
+# --------------------------------------------------------------- formatting
+
+
+@pytest.mark.parametrize(
+    ("amount", "expected"),
+    [
+        (43_942, "₹43,942"),
+        (1_043_942, "₹10,43,942"),
+        (1_026_907, "₹10,26,907"),
+        (17_036, "₹17,036"),
+        (1_00_00_000, "₹1,00,00,000"),
+        (-1_043_942, "-₹10,43,942"),
+    ],
+)
+def test_fmt_inr_groups_digits_once_in_indian_style(amount: int, expected: str) -> None:
+    """Indian grouping must not leave Western commas inside the number.
+
+    The formatter previously pre-grouped with `f"{value:,}"` and then grouped
+    again, turning `1043942` into `₹1,,04,3,,942`. The bot-demo cards use this
+    function, so the double commas were visible on screen.
+    """
+    assert dashboard_ui.fmt_inr(amount) == expected
 
 
 # --------------------------------------------------------------- screens exist
