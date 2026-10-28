@@ -556,7 +556,8 @@ def test_the_demo_script_quotes_no_proof_number_the_json_does_not_contain() -> N
     assert proof["all_match"] is True
     assert proof["all_lookahead_safe"] is True
     assert proof["float_tolerance"] == 1e-9
-    assert proof["days_tested"] == [20240101, 20240105]
+    assert proof["days_tested"] == [20240101, 20240213, 20240328]
+    assert len(proof["days_tested"]) == 3
 
     demo = (REPO_ROOT / "docs" / "DEMO_SCRIPT.md").read_text(encoding="utf-8")
     section = demo.split("## 8b.")[1].split("## 9.")[0]
@@ -962,7 +963,7 @@ def test_the_screen_renders_the_weights_it_receives() -> None:
 
 
 def test_the_whitelisted_window_is_the_one_the_proof_covers() -> None:
-    """Day 1 and day 5 of the proof must both be replayable by a visitor."""
+    """Five start options exist, and the proof covers the first 60-day window."""
     import inspect as _inspect
 
     from scripts.bot_equivalence import main as equivalence_main
@@ -972,4 +973,15 @@ def test_the_whitelisted_window_is_the_one_the_proof_covers() -> None:
     first, last = bot.WHITELIST_START_DATES[0], bot.WHITELIST_START_DATES[-1]
     assert first == 20240101
     assert last == 20240105
-    assert len(bot.WHITELIST_START_DATES) == bot.WINDOW_DAYS
+    assert len(bot.WHITELIST_START_DATES) == bot.START_DATE_COUNT
+    assert bot.WINDOW_DAYS == 60
+
+    import json
+
+    proof = json.loads(
+        (REPO_ROOT / "reports" / "results" / "bot_equivalence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert proof["days_tested"][0] == first
+    assert proof["days_tested"][-1] == 20240328

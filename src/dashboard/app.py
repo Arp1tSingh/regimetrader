@@ -30,6 +30,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.dashboard import data as dd  # noqa: E402
+from src.dashboard import ui  # noqa: E402
 
 #: The caveats that must travel with the results screen (`DECISIONS` R35, R44, R45).
 CAVEATS = [
@@ -51,45 +52,69 @@ CAVEATS = [
     "may capture momentum rather than any predictive skill.",
 ]
 
+#: The Bot demo banner. The P&L panel is a deliberate, recorded exception (R56): it is
+#: fake money on a replay, not a performance claim. The language below is asserted by
+#: `tests/test_bot_demo.py`.
+BOT_BANNER = (
+    "**Simulated live replay — fake money.**\n\n"
+    "This is a replay of already-scored data, to demonstrate decisions and simulated "
+    "P&L. It makes **no performance claim** of any kind. No real money is involved and "
+    "there is no broker connection. The numbers shown are what the frozen strategy "
+    "decided on those dates, not a forecast and not a result you could earn. The "
+    "out-of-sample test found no demonstrated edge."
+)
 
-def _fmt_pct(value: Any) -> str:
-    try:
-        return f"{float(value):+.2%}"
-    except (TypeError, ValueError):
-        return "n/a"
+
+def _fmt_pct(value: Any, *, signed: bool = True) -> str:
+    return ui.fmt_pct(value, signed=signed)
 
 
 def _fmt_num(value: Any, places: int = 4) -> str:
-    try:
-        return f"{float(value):.{places}f}"
-    except (TypeError, ValueError):
-        return "n/a"
+    return ui.fmt_num(value, places=places)
 
 
 def _date_str(key: int | None) -> str:
-    if not key:
-        return "n/a"
-    return pd.to_datetime(str(int(key)), format="%Y%m%d").strftime("%Y-%m-%d")
+    return ui.fmt_date_iso(key)
 
 
 def _header(cfg: dict[str, Any], engine: Any) -> None:
     """Title, disclaimer and the stale-data banner, on every screen."""
-    st.title("RegimeTrader")
+    ui.page_title(
+        "RegimeTrader",
+        "A regime-aware Nifty 50 research console: stored evidence, explicit baselines "
+        "and no live-money claim.",
+        kicker="Academic research console",
+    )
     st.caption(dd.DISCLAIMER)
 
     last = dd.latest_data_key(engine)
-    today = (
-        pd.Timestamp("now").year * 10000 + pd.Timestamp("now").month * 100 + pd.Timestamp("now").day
-    )
+    now = pd.Timestamp.now()
+    today = int(now.strftime("%Y%m%d"))
     stale = dd.is_stale(cfg, last, today)
     if stale:
-        st.error(
-            f"**STALE DATA** — the latest market bar is {_date_str(last)}, older than "
-            f"{cfg['paper']['stale_banner_days']} calendar days. "
-            "Do not read anything on this screen as current."
+        ui.callout(
+            f"<strong>STALE DATA</strong> — the latest market bar is {_date_str(last)}, "
+            f"older than {cfg['paper']['stale_banner_days']} calendar days. "
+            "Do not read anything on this screen as current.",
+            "warn",
         )
     else:
-        st.info(f"Latest market data: {_date_str(last)}")
+        st.caption(f"Latest market data: {_date_str(last)} · stored, not a live quote.")
+
+
+def _sidebar() -> str:
+    """The first sidebar radio is the screen selector, as the tests expect."""
+    st.sidebar.markdown(
+        '<div class="rt-eyebrow">RegimeTrader</div>'
+        '<div style="font-size:1.15rem;font-weight:720;letter-spacing:-0.02em;'
+        'margin-bottom:0.8rem;">Research console</div>',
+        unsafe_allow_html=True,
+    )
+    choice = st.sidebar.radio("Screen", list(SCREENS))
+    st.sidebar.divider()
+    st.sidebar.caption("Read-only · offline · no broker connection")
+    st.sidebar.caption(dd.PAPER_DISCLAIMER)
+    return str(choice)
 
 
 # ---------------------------------------------------------------- screens
@@ -97,17 +122,60 @@ def _header(cfg: dict[str, Any], engine: Any) -> None:
 
 def screen_market(cfg: dict[str, Any], engine: Any) -> None:
     """Index with regime bands, VIX, current regime."""
-    st.subheader("Market overview")
     frame = dd.index_and_regimes(cfg, engine)
     if frame.empty:
         dd.empty("No index prices are loaded. Run the ETL first.")
         return
 
-    regime = frame["regime"].dropna()
-    if not regime.empty:
-        counts = regime.value_counts().to_dict()
-        badge = ", ".join(f"**{k}**: {v} days" for k, v in sorted(counts.items()))
-        st.markdown(f"Regime distribution over the window — {badge}")
+    index_label = str(cfg["data"].get("index_name") or cfg["data"]["index_symbol"])
+    latest = frame.iloc[-1]
+    previous = frame.iloc[-2] if len(frame) > 1 else None
+    change = None
+    if previous is not None and float(previous["close"]) > 0:
+        change = float(latest["close"]) / float(previous["close"]) - 1.0
+
+    regime_series = frame["regime"].dropna()
+    current_regime = str(regime_series.iloc[-1]) if not regime_series.empty else "n/a"
+    duration = 0
+    if not regime_series.empty:
+        current = regime_series.iloc[-1]
+        for value in reversed(regime_series.tolist()):
+            if value != current:
+                break
+            duration += 1
+
+    vix = dd.vix_series(cfg, engine)
+    latest_vix = None if vix.empty else float(vix.iloc[-1]["close"])
+
+    ui.section("Market overview", f"{len(frame):,} stored sessions")
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.metric(
+            f"{index_label} close",
+            ui.fmt_num(latest["close"], 2),
+            None if change is None else _fmt_pct(change),
+            help="Latest stored index close; the change is versus the previous stored session.",
+        )
+    with k2:
+        st.metric("Current regime", current_regime, f"{duration} sessions")
+    with k3:
+        st.metric("India VIX", "n/a" if latest_vix is None else ui.fmt_num(latest_vix, 2))
+    with k4:
+        changes = (
+            int((regime_series != regime_series.shift()).sum() - 1)
+            if len(regime_series)
+            else 0
+        )
+        st.metric("Regime changes", f"{max(changes, 0):,}")
+
+    if not regime_series.empty:
+        counts = regime_series.value_counts().to_dict()
+        chips = "".join(
+            f'<span class="rt-chip">{ui.regime_badge(label)} '
+            f"<strong>{int(counts.get(label, 0)):,}</strong></span>"
+            for label in ui.REGIME_ORDER
+        )
+        st.markdown(f'<div class="rt-chip-row">{chips}</div>', unsafe_allow_html=True)
 
     st.plotly_chart(
         _regime_chart(frame, str(cfg["data"]["index_symbol"])),
@@ -115,28 +183,67 @@ def screen_market(cfg: dict[str, Any], engine: Any) -> None:
         key="index_regime",
     )
 
-    vix = dd.vix_series(cfg, engine)
-    if not vix.empty:
-        st.plotly_chart(_vix_chart(vix, str(cfg["data"]["vix_symbol"])), width="stretch", key="vix")
-    else:
-        dd.empty("No India VIX data is loaded.")
+    left, right = st.columns([2.15, 1])
+    with left:
+        st.markdown("### Volatility")
+        if vix.empty:
+            dd.empty("No India VIX data is loaded.")
+        else:
+            st.plotly_chart(
+                _vix_chart(vix, str(cfg["data"]["vix_symbol"])),
+                width="stretch",
+                key="vix",
+            )
+    with right:
+        st.markdown("### Regime mix")
+        if regime_series.empty:
+            dd.empty("No regime labels are stored.")
+        else:
+            st.plotly_chart(_regime_mix_chart(regime_series), width="stretch", key="regime_mix")
+            st.caption(
+                "Labels are the stored regime model output. The chart shows the whole "
+                "stored history, not a selected window."
+            )
 
 
 def _regime_chart(frame: pd.DataFrame, index_symbol: str) -> Any:
     import plotly.graph_objects as go
 
+    # Explicit four-regime vocabulary: a test reads this function to prove that no
+    # regime is silently dropped from the market chart.
+    regime_order = ("BULL", "SIDEWAYS", "HIGH_VOL", "BEAR")
     x = pd.to_datetime(frame["date_key"].astype(int).astype(str), format="%Y%m%d")
     figure = go.Figure()
-    colors = {
-        "BULL": "#2e7d32",
-        "SIDEWAYS": "#9e9d24",
-        "HIGH_VOL": "#ef6c00",
-        "BEAR": "#c62828",
-    }
+
+    # Light regime bands behind the price line: the colour is a property of the day,
+    # not a second price series.
+    labels = frame["regime"].fillna("").astype(str).tolist()
+    start = 0
+    for position in range(1, len(labels) + 1):
+        if position == len(labels) or labels[position] != labels[start]:
+            label = labels[start]
+            if label in ui.REGIME_COLORS:
+                figure.add_vrect(
+                    x0=x.iloc[start],
+                    x1=x.iloc[position - 1],
+                    fillcolor=ui.REGIME_COLORS[label],
+                    opacity=0.055,
+                    line_width=0,
+                    layer="below",
+                )
+            start = position
+
     figure.add_trace(
-        go.Scatter(x=x, y=frame["close"], mode="lines", name=f"Index ({index_symbol})")
+        go.Scatter(
+            x=x,
+            y=frame["close"],
+            mode="lines",
+            name=f"Index ({index_symbol})",
+            line=dict(color=ui.INK, width=1.7),
+            hovertemplate="%{x|%d %b %Y}<br>%{y:,.2f}<extra></extra>",
+        )
     )
-    for label in ("BULL", "SIDEWAYS", "HIGH_VOL", "BEAR"):
+    for label in regime_order:
         mask = (frame["regime"] == label).fillna(False).to_numpy()
         if not mask.any():
             continue
@@ -145,53 +252,90 @@ def _regime_chart(frame: pd.DataFrame, index_symbol: str) -> Any:
                 x=x[mask],
                 y=frame["close"][mask],
                 mode="markers",
-                marker=dict(color=colors.get(label, "#666666"), size=4),
+                marker=dict(color=ui.REGIME_COLORS.get(label, ui.MUTED), size=3.5),
                 name=label,
+                hovertemplate="%{x|%d %b %Y}<br>%{y:,.2f}<extra></extra>",
             )
         )
     figure.update_layout(
-        title="Index price, coloured by regime (whole stored history)",
+        title="Index price with stored regime labels — whole stored history",
         xaxis_title="date",
-        yaxis_title="close",
+        yaxis_title="index close",
         height=520,
     )
-    return figure
+    return ui.apply_figure(figure)
 
 
 def _vix_chart(frame: pd.DataFrame, vix_symbol: str) -> Any:
     import plotly.graph_objects as go
 
     x = pd.to_datetime(frame["date_key"].astype(int).astype(str), format="%Y%m%d")
-    figure = go.Figure(go.Scatter(x=x, y=frame["close"], mode="lines", name=vix_symbol))
-    figure.update_layout(title="India VIX", height=320)
-    return figure
+    figure = go.Figure(
+        go.Scatter(
+            x=x,
+            y=frame["close"],
+            mode="lines",
+            name=vix_symbol,
+            line=dict(color=ui.WARNING, width=1.5),
+            fill="tozeroy",
+            fillcolor="rgba(180, 83, 9, 0.08)",
+            hovertemplate="%{x|%d %b %Y}<br>%{y:,.2f}<extra></extra>",
+        )
+    )
+    figure.update_layout(
+        title="India VIX — whole stored history",
+        xaxis_title="date",
+        yaxis_title="VIX",
+        height=330,
+    )
+    return ui.apply_figure(figure)
+
+
+def _regime_mix_chart(regime_series: pd.Series) -> Any:
+    import plotly.graph_objects as go
+
+    counts = regime_series.value_counts().reindex(list(ui.REGIME_ORDER), fill_value=0)
+    figure = go.Figure(
+        go.Bar(
+            x=counts.values,
+            y=list(counts.index),
+            orientation="h",
+            marker_color=[ui.REGIME_COLORS.get(label, ui.MUTED) for label in counts.index],
+            text=[f"{int(value):,}" for value in counts.values],
+            textposition="outside",
+            hovertemplate="%{y}: %{x:,} sessions<extra></extra>",
+        )
+    )
+    figure.update_layout(
+        title="Sessions by regime",
+        xaxis_title="sessions",
+        yaxis_title="",
+        height=330,
+        showlegend=False,
+    )
+    return ui.apply_figure(figure)
 
 
 def screen_olap(cfg: dict[str, Any], engine: Any) -> None:
     """Sector-by-quarter heat map, drill-down to stock, year and regime filters."""
-    st.subheader("OLAP explorer")
+    ui.section("OLAP explorer", "Sector × quarter mean daily return")
 
     regimes = dd.regime_labels(engine)
-    left, middle, right = st.columns(3)
-    with left:
-        chosen_regime = st.selectbox("Regime", ["All regimes"] + regimes)
-    with middle:
-        year_choice = st.text_input("Year (blank for all)", value="")
-    with right:
-        quarter_choice = st.selectbox(
-            "Quarter",
-            [None, 1, 2, 3, 4],
-            format_func=lambda q: "All quarters" if q is None else f"Q{q}",
-        )
+    years = dd.available_years(engine)
+    with st.container(border=True):
+        left, middle, right = st.columns(3)
+        with left:
+            chosen_regime = st.selectbox("Regime", ["All regimes"] + regimes)
+        with middle:
+            year_choice = st.selectbox("Year", ["All years"] + [str(year) for year in years])
+        with right:
+            quarter_choice = st.selectbox(
+                "Quarter",
+                [None, 1, 2, 3, 4],
+                format_func=lambda q: "All quarters" if q is None else f"Q{q}",
+            )
 
-    year = None
-    if year_choice.strip():
-        try:
-            year = int(year_choice.strip())
-        except ValueError:
-            st.error(f"`{year_choice}` is not a year.")
-            return
-
+    year = None if year_choice == "All years" else int(year_choice)
     heat = dd.sector_quarter_returns(
         engine,
         year=year,
@@ -204,25 +348,45 @@ def screen_olap(cfg: dict[str, Any], engine: Any) -> None:
 
     st.caption(
         "Mean **daily return** per sector per quarter, from `fact_indicator.return_1d`. "
-        "This is a return, not a price level."
+        "This is a return, not a price level. Hover any cell for the exact value; "
+        "in-cell labels are shown only when the selected window has 16 or fewer quarters."
     )
     st.plotly_chart(_heat_map(heat), width="stretch", key="heat")
 
     sectors = sorted(heat["sector"].dropna().unique())
-    chosen_sector = st.selectbox("Drill down into sector", sectors)
-    quarters = sorted({(int(r.year), int(r.quarter)) for r in heat.itertuples()})
-    if not quarters:
-        dd.empty("That sector has no rows for the selected filters.")
+    if not sectors:
+        dd.empty("No sectors match those filters.")
         return
-
-    pick = st.selectbox(
-        "Quarter", quarters, format_func=lambda pair: dd.quarter_label(pair[0], pair[1])
-    )
-    rows = dd.stocks_in_sector_quarter(engine, str(chosen_sector), pick[0], pick[1])
-    if rows.empty:
-        dd.empty("No stock rows for that sector and quarter.")
-        return
-    st.dataframe(rows, width="stretch")
+    with st.container(border=True):
+        st.markdown("### Drill down")
+        chosen_sector = st.selectbox("Drill down into sector", sectors)
+        quarters = sorted({(int(r.year), int(r.quarter)) for r in heat.itertuples()})
+        if not quarters:
+            dd.empty("That sector has no rows for the selected filters.")
+            return
+        pick = st.selectbox(
+            "Quarter",
+            quarters,
+            format_func=lambda pair: dd.quarter_label(pair[0], pair[1]),
+            key="drill_quarter",
+        )
+        rows = dd.stocks_in_sector_quarter(engine, str(chosen_sector), pick[0], pick[1])
+        if rows.empty:
+            dd.empty("No stock rows for that sector and quarter.")
+            return
+        shown = rows.copy()
+        shown["quarter_return_pct"] = shown["quarter_return_pct"].map(
+            lambda value: f"{float(value):+.2f}%"
+        )
+        shown = shown.rename(
+            columns={
+                "symbol": "symbol",
+                "company": "company",
+                "quarter_return_pct": "quarter return",
+                "days": "days",
+            }
+        )
+        st.dataframe(shown, width="stretch", hide_index=True)
 
 
 def _heat_map(heat: pd.DataFrame) -> Any:
@@ -239,37 +403,58 @@ def _heat_map(heat: pd.DataFrame) -> Any:
     pivot = heat.pivot_table(
         index="sector", columns="quarter_label", values="avg_daily_return_pct"
     ).reindex(index=sectors, columns=columns)
+    values = pivot.to_numpy(dtype=float)
+    # Forty-eight quarter columns make in-cell labels unreadable: the strings overlap
+    # and hide both the colour and the number. Keep hover values always, but print
+    # numbers only for a filtered view narrow enough to read.
+    show_text = len(columns) <= 16
+    text = (
+        [["" if pd.isna(value) else f"{value:+.2f}%" for value in row] for row in values]
+        if show_text
+        else None
+    )
 
     figure = go.Figure(
         go.Heatmap(
-            z=pivot.to_numpy(),
+            z=values,
             x=list(columns),
             y=list(sectors),
-            colorscale="RdYlGn",
+            colorscale=[
+                [0.0, ui.NEGATIVE],
+                [0.5, "#F8FAFC"],
+                [1.0, ui.POSITIVE],
+            ],
             zmid=0.0,
-            colorbar=dict(title="mean daily %"),
-            hovertemplate="%{y} %{x}<br>%{z:.4f}% per day<extra></extra>",
+            text=text,
+            texttemplate="%{text}" if show_text else None,
+            textfont=dict(size=10, color=ui.INK),
+            colorbar=dict(title="mean daily %", thickness=12),
+            hovertemplate="%{y} %{x}<br>%{z:+.2f}% per day<extra></extra>",
         )
     )
     figure.update_layout(
-        title="Sector x quarter: mean daily return (%)",
+        title="Sector × quarter: mean daily return (%)",
         xaxis_title="quarter",
         yaxis_title="sector",
         height=max(420, 26 * len(sectors)),
     )
-    return figure
+    figure.update_xaxes(tickangle=-90, tickfont=dict(size=9))
+    figure.update_yaxes(tickfont=dict(size=10))
+    return ui.apply_figure(figure)
 
 
 def screen_signals(cfg: dict[str, Any], engine: Any) -> None:
     """Today's paper signals."""
-    st.subheader("Today's signals")
+    ui.section("Today's signals", "Latest stored paper_live decision")
     st.warning(dd.PAPER_DISCLAIMER)
 
     date_key = dd.latest_signals_date(engine)
     if date_key is None:
-        dd.empty(
-            "No paper_live decision has been stored yet. The first run declined to "
-            "process the lock's data_end_date, so nothing has been decided."
+        ui.callout(
+            "No `paper_live` decision has been stored yet. The first run declined to "
+            "process the lock's `data_end_date`, so nothing has been decided. This screen "
+            "shows stored decisions, never a live feed.",
+            "info",
         )
         return
 
@@ -279,16 +464,67 @@ def screen_signals(cfg: dict[str, Any], engine: Any) -> None:
         dd.empty("That decision stored no target weights (the strategy was flat).")
         return
 
+    gross = float(signals["target_weight"].fillna(0.0).sum())
+    largest = signals.sort_values("target_weight", ascending=False).iloc[0]
+    k1, k2, k3 = st.columns(3)
+    with k1:
+        st.metric("Names with a target", f"{len(signals):,}")
+    with k2:
+        st.metric("Gross target exposure", _fmt_pct(gross, signed=False))
+    with k3:
+        st.metric(
+            "Largest target",
+            str(largest["symbol"]),
+            _fmt_pct(float(largest["target_weight"]), signed=False),
+        )
+
     shown = signals.copy()
     shown["action"] = shown["target_weight"].map(lambda w: "BUY" if float(w) > 0 else "HOLD")
-    shown["target_weight"] = shown["target_weight"].map(lambda w: _fmt_pct(w))
+    shown["target_weight"] = shown["target_weight"].map(lambda w: _fmt_pct(w, signed=False))
     shown["prob_up"] = shown["prob_up"].map(lambda p: _fmt_num(p))
-    st.dataframe(shown[["symbol", "action", "target_weight", "prob_up"]], width="stretch")
+    shown = shown.rename(
+        columns={
+            "symbol": "symbol",
+            "action": "action",
+            "target_weight": "target weight",
+            "prob_up": "prob_up",
+        }
+    )
+    st.dataframe(shown[["symbol", "action", "target weight", "prob_up"]], width="stretch")
+    st.caption(
+        "The stored `pending_target` table has no action field. **BUY** means a positive "
+        "target weight; **HOLD** includes zero and is not a sell instruction. No live "
+        "market quote is involved."
+    )
+    st.plotly_chart(_signal_weights_chart(signals), width="stretch", key="signal_weights")
+
+
+def _signal_weights_chart(signals: pd.DataFrame) -> Any:
+    import plotly.graph_objects as go
+
+    ordered = signals.sort_values("target_weight", ascending=True)
+    figure = go.Figure(
+        go.Bar(
+            x=ordered["target_weight"],
+            y=ordered["symbol"],
+            orientation="h",
+            marker_color=ui.ACCENT,
+            hovertemplate="%{y}: %{x:.2%}<extra></extra>",
+        )
+    )
+    figure.update_layout(
+        title="Target weights at the latest decision",
+        xaxis_title="target weight",
+        yaxis_title="",
+        height=max(300, 22 * len(ordered)),
+        xaxis_tickformat=".0%",
+    )
+    return ui.apply_figure(figure)
 
 
 def screen_results(cfg: dict[str, Any], engine: Any) -> None:
     """Strategy against every baseline, over the whole stored period."""
-    st.subheader("Backtest results")
+    ui.section("Backtest results", "Stored runs, all baselines, whole stored period")
     period = st.radio("Period", ["test", "validation"], horizontal=True, index=0)
 
     frame = dd.summary(cfg, period)
@@ -296,14 +532,33 @@ def screen_results(cfg: dict[str, Any], engine: Any) -> None:
         dd.empty(f"No `summary_{period}.csv` yet.")
         return
 
+    labels = dd.result_labels(cfg)
+    strategy = frame[frame["run_id"] == "backtest_main"]
+    if not strategy.empty:
+        row = strategy.iloc[0]
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            st.metric("V2 Sharpe", _fmt_num(row.get("sharpe"), 3))
+        with k2:
+            st.metric("V2 CAGR", _fmt_pct(row.get("cagr")))
+        with k3:
+            st.metric("V2 max drawdown", _fmt_pct(row.get("max_drawdown"), signed=False))
+        with k4:
+            st.metric("V2 final equity", ui.fmt_inr(row.get("final_equity")))
+        st.caption(
+            "These are the stored test-run numbers, shown with every baseline below. "
+            "They are not a claim that the strategy has an edge."
+        )
+
     st.markdown(f"### {period.capitalize()} period — all runs")
     table = frame.copy()
+    table["run_id"] = table["run_id"].map(lambda run: labels.get(str(run), str(run)))
     table["sharpe"] = table["sharpe"].map(lambda v: _fmt_num(v))
     if "sharpe_ci_low" in table.columns:
         table["sharpe_ci_low"] = table["sharpe_ci_low"].map(lambda v: _fmt_num(v))
         table["sharpe_ci_high"] = table["sharpe_ci_high"].map(lambda v: _fmt_num(v))
     table["cagr"] = table["cagr"].map(lambda v: _fmt_pct(v))
-    table["max_drawdown"] = table["max_drawdown"].map(lambda v: _fmt_pct(v))
+    table["max_drawdown"] = table["max_drawdown"].map(lambda v: _fmt_pct(v, signed=False))
     keep = [
         c
         for c in (
@@ -317,22 +572,27 @@ def screen_results(cfg: dict[str, Any], engine: Any) -> None:
         )
         if c in table.columns
     ]
-    st.dataframe(table[keep], width="stretch")
+    st.dataframe(table[keep], width="stretch", hide_index=True)
 
     if "sharpe_ci_low" in frame.columns:
         st.caption(
             "Shaded bands on the chart below are block-bootstrap 95% intervals. "
             "Every one of them contains zero."
         )
-        labels = dd.result_labels(cfg)
-    st.plotly_chart(_sharpe_ci_chart(frame, labels), width="stretch", key="ci")
+        st.plotly_chart(_sharpe_ci_chart(frame, labels), width="stretch", key="ci")
 
     runs = [r for r in dd.RESULT_RUNS if r in set(frame["run_id"])]
     if not runs:
         dd.empty("No equity curves are stored for this period.")
     else:
-        st.plotly_chart(_equity_chart(engine, runs, labels), width="stretch", key="equity")
-        st.plotly_chart(_drawdown_chart(engine, runs, labels), width="stretch", key="drawdown")
+        st.markdown("### Equity and drawdown")
+        equity_tab, drawdown_tab = st.tabs(["Equity curves", "Drawdown"])
+        with equity_tab:
+            st.plotly_chart(_equity_chart(engine, runs, labels), width="stretch", key="equity")
+        with drawdown_tab:
+            st.plotly_chart(
+                _drawdown_chart(engine, runs, labels), width="stretch", key="drawdown"
+            )
         st.caption(
             "Every baseline is plotted beside the strategy over the **whole** stored "
             "period. No window is trimmed to flatter the strategy."
@@ -344,36 +604,42 @@ def screen_results(cfg: dict[str, Any], engine: Any) -> None:
         pivot = yearly.pivot(index="year", columns="label", values="return")
         st.dataframe(pivot.map(lambda v: _fmt_pct(v)), width="stretch")
 
-    st.markdown("### What these numbers do and do not show")
-    for note in CAVEATS:
-        st.markdown(f"- {note}")
+    with st.container(border=True):
+        st.markdown("### What these numbers do and do not show")
+        for note in CAVEATS:
+            st.markdown(f"- {note}")
 
 
 def _sharpe_ci_chart(frame: pd.DataFrame, labels: dict[str, str]) -> Any:
     import plotly.graph_objects as go
 
     names = [labels.get(r, r) for r in frame["run_id"].tolist()]
-    figure = go.Figure()
-    figure.add_trace(
+    colors = [
+        ui.ACCENT if run == "backtest_main" else "#94A3B8" for run in frame["run_id"].tolist()
+    ]
+    figure = go.Figure(
         go.Bar(
             x=names,
             y=frame["sharpe"].to_numpy(),
+            marker_color=colors,
             error_y=dict(
                 type="data",
                 symmetric=False,
                 array=(frame["sharpe"] - frame["sharpe_ci_low"]).to_numpy(),
                 arrayminus=(frame["sharpe"] - frame["sharpe_ci_high"]).to_numpy(),
+                color=ui.MUTED,
             ),
             name="Sharpe (95% block bootstrap CI)",
+            hovertemplate="%{x}<br>Sharpe %{y:.3f}<extra></extra>",
         )
     )
-    figure.add_hline(y=0.0, line_dash="dash", line_color="red")
+    figure.add_hline(y=0.0, line_dash="dash", line_color=ui.NEGATIVE, line_width=1)
     figure.update_layout(
         title="Sharpe with 95% confidence intervals — every interval crosses zero",
         height=420,
         yaxis_title="Sharpe",
     )
-    return figure
+    return ui.apply_figure(figure)
 
 
 def _equity_chart(engine: Any, runs: list[str], labels: dict[str, str]) -> Any:
@@ -384,12 +650,19 @@ def _equity_chart(engine: Any, runs: list[str], labels: dict[str, str]) -> Any:
     for run_id in runs:
         part = frame[frame["run_id"] == run_id]
         x = pd.to_datetime(part["date_key"].astype(int).astype(str), format="%Y%m%d")
+        is_strategy = run_id == "backtest_main"
         figure.add_trace(
             go.Scatter(
                 x=x,
                 y=part["equity"],
                 mode="lines",
                 name=labels.get(run_id, run_id),
+                line=dict(
+                    color=ui.ACCENT if is_strategy else None,
+                    width=2.6 if is_strategy else 1.3,
+                ),
+                opacity=1.0 if is_strategy else 0.82,
+                hovertemplate="%{x|%d %b %Y}<br>%{y:,.0f}<extra></extra>",
             )
         )
     figure.update_layout(
@@ -397,8 +670,10 @@ def _equity_chart(engine: Any, runs: list[str], labels: dict[str, str]) -> Any:
         xaxis_title="date",
         yaxis_title="equity",
         height=520,
+        yaxis_tickprefix="₹",
+        yaxis_tickformat=",.0f",
     )
-    return figure
+    return ui.apply_figure(figure)
 
 
 def _drawdown_chart(engine: Any, runs: list[str], labels: dict[str, str]) -> Any:
@@ -409,12 +684,19 @@ def _drawdown_chart(engine: Any, runs: list[str], labels: dict[str, str]) -> Any
     for run_id in runs:
         part = frame[frame["run_id"] == run_id]
         x = pd.to_datetime(part["date_key"].astype(int).astype(str), format="%Y%m%d")
+        is_strategy = run_id == "backtest_main"
         figure.add_trace(
             go.Scatter(
                 x=x,
                 y=part["drawdown"],
                 mode="lines",
                 name=labels.get(run_id, run_id),
+                line=dict(
+                    color=ui.ACCENT if is_strategy else None,
+                    width=2.4 if is_strategy else 1.2,
+                ),
+                opacity=1.0 if is_strategy else 0.78,
+                hovertemplate="%{x|%d %b %Y}<br>%{y:.2%}<extra></extra>",
             )
         )
     figure.update_layout(
@@ -422,13 +704,14 @@ def _drawdown_chart(engine: Any, runs: list[str], labels: dict[str, str]) -> Any
         xaxis_title="date",
         yaxis_title="drawdown",
         height=460,
+        yaxis_tickformat=".0%",
     )
-    return figure
+    return ui.apply_figure(figure)
 
 
 def screen_diagnostics(cfg: dict[str, Any], engine: Any) -> None:
-    """Classifier diagnostics."""
-    st.subheader("Model diagnostics")
+    """Classifier diagnostics, including the stored confusion matrix."""
+    ui.section("Model diagnostics", "Stored validation and test metrics")
     frame = dd.classifier_metrics(cfg)
     if frame.empty:
         dd.empty("No `classifier_metrics.csv` yet.")
@@ -437,30 +720,62 @@ def screen_diagnostics(cfg: dict[str, Any], engine: Any) -> None:
     periods = sorted(frame["period"].unique())
     period = st.selectbox("Period", periods, index=len(periods) - 1)
     window = frame[frame["period"] == period]
+    models = sorted(window["model"].unique())
+    model = st.selectbox("Model", models)
+    selected = window[window["model"] == model].iloc[0]
 
-    st.dataframe(
-        window[
-            [
-                "model",
-                "n",
-                "accuracy",
-                "majority_baseline",
-                "edge_over_baseline",
-                "roc_auc",
-            ]
-        ],
-        width="stretch",
-    )
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.metric("Accuracy", _fmt_pct(selected.get("accuracy"), signed=False))
+    with k2:
+        st.metric("Edge over majority", f"{float(selected.get('edge_over_baseline')):+.4f}")
+    with k3:
+        st.metric("ROC AUC", _fmt_num(selected.get("roc_auc"), 3))
+    with k4:
+        st.metric("Rows", f"{int(selected.get('n')):,}")
+
+    st.markdown("### All models in this period")
+    metrics = window.copy()
+    for column in ("accuracy", "majority_baseline"):
+        if column in metrics:
+            metrics[column] = metrics[column].map(lambda value: _fmt_pct(value, signed=False))
+    if "edge_over_baseline" in metrics:
+        metrics["edge_over_baseline"] = metrics["edge_over_baseline"].map(
+            lambda value: f"{float(value):+.4f}"
+        )
+    for column in ("precision", "recall", "f1"):
+        if column in metrics:
+            metrics[column] = metrics[column].map(lambda value: _fmt_num(value, 3))
+    if "roc_auc" in metrics:
+        metrics["roc_auc"] = metrics["roc_auc"].map(lambda value: _fmt_num(value, 3))
+    keep = [
+        column
+        for column in (
+            "model",
+            "n",
+            "accuracy",
+            "majority_baseline",
+            "edge_over_baseline",
+            "roc_auc",
+        )
+        if column in metrics.columns
+    ]
+    st.dataframe(metrics[keep], width="stretch", hide_index=True)
+
     st.warning(
         "`edge_over_baseline` is accuracy minus always predicting 'up'. A positive number "
         "is the only evidence the classifier beats doing nothing, and on this project it "
         "is very small. **The dashboard does not claim the classifier adds value.**"
     )
 
-    models = sorted(window["model"].unique())
-    model = st.selectbox("Model for the probability distribution", models)
+    st.markdown("### Confusion matrix")
+    st.plotly_chart(_confusion_chart(selected), width="stretch", key=f"confusion_{model}_{period}")
+    st.caption(
+        "Built directly from the stored `tp`, `fp`, `fn` and `tn` counts. Rows are the "
+        "actual direction, columns are the predicted direction. This is a diagnostic of "
+        "the classifier, not a trading result."
+    )
 
-    # The window comes from the configured splits, never from a literal (rule 6).
     splits = cfg["splits"]
     if period == "test":
         start = int(pd.Timestamp(splits["test_start"]).strftime("%Y%m%d"))
@@ -475,14 +790,22 @@ def screen_diagnostics(cfg: dict[str, Any], engine: Any) -> None:
     else:
         import plotly.graph_objects as go
 
-        figure = go.Figure(go.Histogram(x=hist["prob_up"], nbinsx=60, name=str(model)))
+        figure = go.Figure(
+            go.Histogram(
+                x=hist["prob_up"],
+                nbinsx=60,
+                name=str(model),
+                marker_color=ui.ACCENT,
+                opacity=0.85,
+            )
+        )
         figure.update_layout(
             title=f"prob_up distribution — {model} ({period})",
             xaxis_title="prob_up",
             yaxis_title="rows",
             height=380,
         )
-        st.plotly_chart(figure, width="stretch", key=f"hist_{model}_{period}")
+        st.plotly_chart(ui.apply_figure(figure), width="stretch", key=f"hist_{model}_{period}")
         if model == "tree":
             st.error(
                 "The decision tree has only **3 distinct probability values** with 76.4% of "
@@ -500,15 +823,54 @@ def screen_diagnostics(cfg: dict[str, Any], engine: Any) -> None:
         st.plotly_chart(_importance_chart(importance), width="stretch", key=f"imp_{model}")
 
 
+def _confusion_chart(row: Any) -> Any:
+    """2×2 confusion matrix from the stored tp/fp/fn/tn counts."""
+    import plotly.graph_objects as go
+
+    tp = int(row.get("tp", 0) or 0)
+    fp = int(row.get("fp", 0) or 0)
+    fn = int(row.get("fn", 0) or 0)
+    tn = int(row.get("tn", 0) or 0)
+    values = [[tn, fp], [fn, tp]]
+    text = [[f"{tn:,}", f"{fp:,}"], [f"{fn:,}", f"{tp:,}"]]
+    figure = go.Figure(
+        go.Heatmap(
+            z=values,
+            x=["Predicted down (0)", "Predicted up (1)"],
+            y=["Actual down (0)", "Actual up (1)"],
+            text=text,
+            texttemplate="%{text}",
+            textfont=dict(size=20, color=ui.INK),
+            colorscale=[[0.0, "#F1F5F9"], [1.0, ui.ACCENT]],
+            showscale=False,
+            hovertemplate="%{y} / %{x}: %{z:,}<extra></extra>",
+        )
+    )
+    figure.update_layout(
+        title="Confusion matrix",
+        height=330,
+        xaxis_title="predicted",
+        yaxis_title="actual",
+    )
+    return ui.apply_figure(figure)
+
+
 def _importance_chart(frame: pd.DataFrame) -> Any:
     import plotly.graph_objects as go
 
     top = frame.head(15).iloc[::-1]
     figure = go.Figure(
-        go.Bar(x=top["importance"], y=top["feature"], orientation="h", name="importance")
+        go.Bar(
+            x=top["importance"],
+            y=top["feature"],
+            orientation="h",
+            marker_color=ui.ACCENT,
+            name="importance",
+            hovertemplate="%{y}: %{x:.4f}<extra></extra>",
+        )
     )
     figure.update_layout(title="Feature importance (top 15)", height=520, xaxis_title="importance")
-    return figure
+    return ui.apply_figure(figure)
 
 
 # ---------------------------------------------------------------- bot demo
@@ -516,18 +878,16 @@ def _importance_chart(frame: pd.DataFrame) -> Any:
 
 def screen_bot(cfg: dict[str, Any], engine: Any) -> None:
     """Replay the frozen bot on a throwaway copy. Never touches the real warehouse."""
-    st.subheader("Bot demo")
-
-    st.warning(
-        "**This is a replay of already-scored data, to demonstrate decisions only.**\n\n"
-        "It makes **no performance claim** of any kind. No real money is involved and "
-        "there is no broker connection. The numbers shown are what the frozen strategy "
-        "decided on those dates, not a forecast and not a result you could earn."
-    )
+    ui.section("Bot demo", "Simulated live replay of stored test days")
+    st.warning(BOT_BANNER)
 
     from src.dashboard import bot
 
-    allowed = bot.available_start_dates(cfg, dd.readonly_engine(cfg))
+    read_engine = dd.readonly_engine(cfg)
+    try:
+        allowed = bot.available_start_dates(cfg, read_engine)
+    finally:
+        read_engine.dispose()
     if not allowed:
         dd.empty("This warehouse has no trading days in its configured test period.")
         return
@@ -542,41 +902,73 @@ def screen_bot(cfg: dict[str, Any], engine: Any) -> None:
         "Price note: prices are split- and dividend-adjusted, so share counts on this "
         "screen are illustrative rather than real tradable quantities."
     )
-
     st.caption(
-        f"Safety limits: the warehouse is opened read-only, every run works on a "
-        f"temporary copy that is deleted afterwards, only one run happens at a time, "
-        f"and only these {len(allowed)} start dates can be chosen. "
-        f"Lookback: {bot.lookback_trading_days(cfg)} trading days, derived from the "
-        f"regime drawdown window and the longest indicator."
+        f"Playback window: {bot.WINDOW_DAYS} stored trading days from one of "
+        f"{len(allowed)} fixed start dates. The warehouse is opened read-only, every run "
+        f"works on a temporary copy that is deleted afterwards, only one run happens at a "
+        f"time, and no free text reaches a query."
     )
 
-    labels = {f"day {d}  ({pd.Timestamp(str(d)):%d %b %Y})": d for d in allowed}
+    labels = {
+        f"Start {index + 1} · {ui.fmt_date(day)}": day
+        for index, day in enumerate(allowed)
+    }
     choice = st.selectbox("Start day", list(labels))
     start_date = labels[choice]
 
+    animate = st.toggle("Animate the replay", value=True)
+    speed = st.select_slider(
+        "Playback speed",
+        options=["Fast", "Normal", "Slow"],
+        value="Normal",
+        help="Normal is roughly 0.12 seconds per trading day.",
+    )
+
+    autoplay = bool(st.session_state.pop("bot_autoplay", False))
+    autoplay_speed = str(st.session_state.pop("bot_speed", speed))
     run = bot.cached(start_date)
     if run is not None:
         st.success(
-            f"Showing a cached run for {pd.Timestamp(str(run.start_date)):%d %b %Y} "
+            f"Showing a cached run for {ui.fmt_date(run.start_date)} "
             f"(computed in {run.elapsed_seconds:.1f}s). Press Run to recompute."
         )
-        _render_bot(run)
+        if autoplay:
+            _render_bot_live(run, speed=autoplay_speed)
+        else:
+            _render_bot(run)
+            if st.button("Play the replay", type="secondary"):
+                # Do not render the full result and start the animation in the same
+                # script run: both would create the chart and day-inspector widgets.
+                st.session_state["bot_autoplay"] = True
+                st.session_state["bot_speed"] = str(speed)
+                st.rerun()
         st.divider()
 
     if st.button("Run the bot", type="primary"):
-        _run_bot(cfg, start_date, allowed)
+        _run_bot(cfg, start_date, allowed, animate=animate, speed=speed)
 
 
-def _run_bot(cfg: dict[str, Any], start_date: int, allowed: tuple[int, ...]) -> None:
+def _run_bot(
+    cfg: dict[str, Any],
+    start_date: int,
+    allowed: tuple[int, ...],
+    *,
+    animate: bool = True,
+    speed: str = "Normal",
+) -> None:
     """Run a replay, with every failure mode reduced to a safe, generic message."""
     from src.dashboard import bot
 
     status = st.empty()
+    progress = st.empty()
     try:
         with bot.single_run():
-            status.info("Replaying on a temporary copy...")
+            status.info("Preparing the replay on a temporary copy...")
             progress = st.progress(0.0, text="starting")
+
+            def on_phase(label: str) -> None:
+                status.info(label)
+                progress.progress(0.0, text=label)
 
             def on_day(index: int) -> None:
                 progress.progress(
@@ -596,23 +988,29 @@ def _run_bot(cfg: dict[str, Any], start_date: int, allowed: tuple[int, ...]) -> 
                 allowed=allowed,
                 deadline_check=deadline_check,
                 per_day_check=on_day,
+                phase_check=on_phase,
             )
             progress.empty()
             status.empty()
 
             run.first_day_check = bot.first_day_check_against_backtest(cfg, run)
             bot.store(run)
+            st.session_state["bot_autoplay"] = bool(animate)
+            st.session_state["bot_speed"] = str(speed)
             st.rerun()
     except bot.ReplayBusy:
         status.empty()
+        progress.empty()
         st.warning("A replay is already running for someone else. Try again in a moment.")
     except TimeoutError:
         status.empty()
+        progress.empty()
         st.error("That took too long and was stopped. Try again.")
     except Exception:
         # Nothing internal is shown to an anonymous visitor: no paths, no SQL, no
         # traceback. The detail goes to the server log.
         status.empty()
+        progress.empty()
         _log_bot_failure(start_date)
         st.error("The replay could not be completed. Please try again.")
 
@@ -627,79 +1025,45 @@ def _log_bot_failure(start_date: int) -> None:
     log.error("bot demo failed for start_date=%s\n%s", start_date, traceback.format_exc())
 
 
-def _render_bot(run: Any) -> None:
+def _render_bot(
+    run: Any, *, chart_key: str = "bot_pnl_full", day_key: str = "bot_day_inspector"
+) -> None:
     from src.dashboard import bot
 
+    pnl = bot.portfolio_pnl(run)
     st.markdown(
-        f"**{bot.WINDOW_DAYS} trading days from "
-        f"{pd.Timestamp(str(run.start_date)):%d %b %Y}** — completed in "
-        f"{run.elapsed_seconds:.1f}s using {run.lookback} days of lookback history."
+        f"**{bot.WINDOW_DAYS} trading days from {ui.fmt_date(run.start_date)}** — "
+        f"completed in {run.elapsed_seconds:.1f}s using {run.lookback} days of lookback "
+        f"history."
     )
 
-    summary = pd.DataFrame(
-        [
-            {
-                "day": pd.Timestamp(str(d.date_key)).strftime("%Y-%m-%d"),
-                "regime": d.regime or "n/a",
-                "entry threshold": (
-                    "n/a" if d.entry_threshold is None else f"{d.entry_threshold:.6f}"
-                ),
-                "candidates": d.candidates,
-                "above threshold": d.passed_threshold,
-                "target weights": len(d.target_weights),
-                "orders": len(d.orders),
-                "equity": round(d.equity, 2),
-                "cash": round(d.cash, 2),
-                "holdings value": round(d.positions_value, 2),
-            }
-            for d in run.days
-        ]
-    )
-    st.dataframe(summary, width="stretch")
+    if not pnl.empty:
+        _live_cards(pnl.iloc[-1], run)
+        st.plotly_chart(_pnl_chart(pnl, run), width="stretch", key=chart_key)
+    else:
+        st.info("The replay returned no daily rows.")
 
-    for day in run.days:
-        with st.expander(f"{pd.Timestamp(str(day.date_key)):%Y-%m-%d} — {day.regime or 'n/a'}"):
-            if day.target_weights:
-                st.markdown(
-                    f"**Target weights at this close** "
-                    f"({len(day.target_weights)} name(s), exposure "
-                    f"{sum(day.target_weights.values()):.4f}):"
-                )
-                st.dataframe(
-                    pd.DataFrame(
-                        [
-                            {"symbol": symbol, "target weight": round(weight, 6)}
-                            for symbol, weight in sorted(day.target_weights.items())
-                        ]
-                    ),
-                    width="stretch",
-                )
-            else:
-                st.write("No target weights on this day.")
-            if not day.orders:
-                st.write("No orders on this day.")
-            else:
-                st.dataframe(pd.DataFrame(day.orders), width="stretch")
-            st.markdown("**Portfolio after this day's fills:**")
-            if day.holdings:
-                st.dataframe(
-                    pd.DataFrame(
-                        [
-                            {"symbol": symbol, "quantity": quantity}
-                            for symbol, quantity in sorted(day.holdings.items())
-                        ]
-                    ),
-                    width="stretch",
-                )
-            else:
-                st.write("No positions owned after this day's fills.")
+    summary = _bot_summary(run, pnl)
+    st.markdown("### Day-by-day summary")
+    st.dataframe(summary, width="stretch", hide_index=True)
+
+    if run.days:
+        options = list(range(len(run.days)))
+        selected = st.selectbox(
+            "Inspect a day",
+            options,
+            format_func=lambda index: (
+                f"Day {index + 1} · {ui.fmt_date(run.days[index].date_key)}"
+            ),
+            key=day_key,
+        )
+        _render_day_detail(run.days[selected])
 
     check = run.first_day_check
     st.markdown("### No-hindsight check (day 1)")
     if not check:
         st.write("Not run for this result.")
-        return
-    if check.get("match"):
+    elif check.get("match"):
         st.success(
             f"The replay's first-day orders **match** the stored `backtest_main` records: "
             f"{check['n_replay']} orders on both sides, same symbols, quantities and "
@@ -746,6 +1110,7 @@ def _render_bot(run: Any) -> None:
                     ]
                 ),
                 width="stretch",
+                hide_index=True,
             )
         else:
             st.error(
@@ -753,6 +1118,227 @@ def _render_bot(run: Any) -> None:
                 "being hidden."
             )
             st.json(proof)
+
+
+def _bot_summary(run: Any, pnl: pd.DataFrame) -> pd.DataFrame:
+    """Compact day table; the live panel already shows the detailed day cards."""
+    rows: list[dict[str, Any]] = []
+    for index, day in enumerate(run.days):
+        pnl_row = pnl.iloc[index] if index < len(pnl) else {}
+        rows.append(
+            {
+                "day": ui.fmt_date_iso(day.date_key),
+                "regime": day.regime or "n/a",
+                "entry threshold": (
+                    "n/a" if day.entry_threshold is None else f"{day.entry_threshold:.6f}"
+                ),
+                "candidates": day.candidates,
+                "above threshold": day.passed_threshold,
+                "targets": len(day.target_weights),
+                "fills": len(day.orders),
+                "equity": round(day.equity, 2),
+                "bot P&L": round(float(pnl_row.get("bot_pnl", 0.0) or 0.0), 2),
+                "Nifty P&L": round(float(pnl_row.get("nifty_pnl", 0.0) or 0.0), 2)
+                if not pd.isna(pnl_row.get("nifty_pnl", float("nan")))
+                else None,
+                "difference": round(float(pnl_row.get("difference", 0.0) or 0.0), 2)
+                if not pd.isna(pnl_row.get("difference", float("nan")))
+                else None,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _render_day_detail(day: Any) -> None:
+    """One day's decisions, fills and cumulative book."""
+    st.markdown(f"**{ui.fmt_date(day.date_key)} · {day.regime or 'n/a'}**")
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**Fills at this open**")
+        if not day.orders:
+            st.caption("No fills today. Decisions at the close fill at the next open.")
+        else:
+            st.dataframe(pd.DataFrame(day.orders), width="stretch", hide_index=True)
+    with right:
+        st.markdown("**Holdings after this open**")
+        if day.holdings:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {"symbol": symbol, "quantity": quantity}
+                        for symbol, quantity in sorted(day.holdings.items())
+                    ]
+                ),
+                width="stretch",
+                hide_index=True,
+            )
+        else:
+            st.caption("No positions owned after this open.")
+
+    st.caption(
+        f"Entry threshold applied: "
+        f"{'n/a' if day.entry_threshold is None else f'{day.entry_threshold:.6f}'} · "
+        f"{day.candidates} candidates · {day.passed_threshold} above threshold."
+    )
+
+    if day.target_weights:
+        st.markdown(
+            f"**Target weights at this close** "
+            f"({len(day.target_weights)} name(s), exposure "
+            f"{sum(day.target_weights.values()):.4f}):"
+        )
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"symbol": symbol, "target weight": round(weight, 6)}
+                    for symbol, weight in sorted(day.target_weights.items())
+                ]
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+    else:
+        st.write("No target weights on this day.")
+
+
+def _live_header(day: Any, index: int, total: int, run: Any) -> None:
+    st.markdown(
+        f'<div class="rt-live-head">'
+        f'<span class="rt-badge live">Simulated live</span>'
+        f'<span class="rt-live-day">Day {index + 1} of {total}</span>'
+        f'<span class="rt-live-date">{ui.fmt_date(day.date_key)}</span>'
+        f"{ui.regime_badge(day.regime)}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        f"Fake money · {ui.fmt_inr(run.initial_capital)} starting capital · "
+        f"benchmark: {run.index_label or run.index_symbol or 'configured index'} "
+        f"buy-and-hold · not a live market feed."
+    )
+
+
+def _live_cards(row: Any, run: Any) -> None:
+    columns = st.columns(4)
+    bot_pnl = row.get("bot_pnl")
+    nifty_pnl = row.get("nifty_pnl")
+    difference = row.get("difference")
+    difference_return = row.get("difference_return")
+    with columns[0]:
+        st.metric(
+            "Fake portfolio",
+            ui.fmt_inr(row.get("bot_equity")),
+            ui.fmt_pct(row.get("bot_return")),
+        )
+    with columns[1]:
+        st.metric(
+            "Bot P&L",
+            ui.fmt_inr(bot_pnl),
+            ui.fmt_pct(row.get("bot_return")),
+            help="Net of the configured simulated costs and slippage.",
+        )
+    with columns[2]:
+        st.metric(
+            f"{run.index_label or run.index_symbol or 'Index'} buy-and-hold",
+            "n/a" if pd.isna(row.get("nifty_equity")) else ui.fmt_inr(row.get("nifty_equity")),
+            "n/a" if pd.isna(nifty_pnl) else ui.fmt_pct(row.get("nifty_return")),
+            help="Same starting capital, invested in the configured index from day-1 close.",
+        )
+    with columns[3]:
+        st.metric(
+            "Difference vs index",
+            "n/a" if pd.isna(difference) else ui.fmt_inr(difference),
+            "n/a" if pd.isna(difference_return) else ui.fmt_pp(difference_return),
+        )
+
+
+def _pnl_chart(pnl: pd.DataFrame, run: Any) -> Any:
+    import plotly.graph_objects as go
+
+    x = pd.to_datetime(pnl["date_key"].astype(int).astype(str), format="%Y%m%d")
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=x,
+            y=pnl["bot_equity"],
+            mode="lines+markers",
+            name="Bot (fake money)",
+            line=dict(color=ui.ACCENT, width=2.4),
+            marker=dict(size=3),
+            hovertemplate="%{x|%d %b %Y}<br>%{y:,.0f}<extra></extra>",
+        )
+    )
+    if pnl["nifty_equity"].notna().any():
+        figure.add_trace(
+            go.Scatter(
+                x=x,
+                y=pnl["nifty_equity"],
+                mode="lines",
+                name=f"{run.index_label or 'Index'} buy-and-hold",
+                line=dict(color="#94A3B8", width=1.6, dash="dash"),
+                hovertemplate="%{x|%d %b %Y}<br>%{y:,.0f}<extra></extra>",
+            )
+        )
+    if run.initial_capital:
+        figure.add_hline(
+            y=float(run.initial_capital),
+            line_dash="dot",
+            line_color=ui.BORDER,
+            line_width=1,
+        )
+    figure.update_layout(
+        title="Fake portfolio vs index buy-and-hold — same starting capital",
+        xaxis_title="date",
+        yaxis_title="portfolio value",
+        height=380,
+        yaxis_tickprefix="₹",
+        yaxis_tickformat=",.0f",
+    )
+    return ui.apply_figure(figure)
+
+
+def _render_bot_live(run: Any, speed: str = "Normal") -> None:
+    """Reveal the stored replay day by day; this is presentation, not a live feed."""
+    import time
+
+    from src.dashboard import bot
+
+    pnl = bot.portfolio_pnl(run)
+    if pnl.empty:
+        _render_bot(run)
+        return
+
+    delay = {"Fast": 0.03, "Normal": 0.12, "Slow": 0.35}.get(speed, 0.12)
+    header = st.empty()
+    cards = st.empty()
+    chart = st.empty()
+    detail = st.empty()
+    progress = st.progress(0.0, text="starting the replay")
+
+    for index, day in enumerate(run.days):
+        row = pnl.iloc[index]
+        with header.container():
+            _live_header(day, index, len(run.days), run)
+        with cards.container():
+            _live_cards(row, run)
+        if index == 0 or index % 2 == 0 or index == len(run.days) - 1:
+            chart.plotly_chart(_pnl_chart(pnl.iloc[: index + 1], run), width="stretch")
+        with detail.container():
+            _render_day_detail(day)
+        progress.progress(
+            (index + 1) / len(run.days),
+            text=f"day {index + 1} of {len(run.days)} · {ui.fmt_date(day.date_key)}",
+        )
+        time.sleep(delay)
+
+    progress.empty()
+    for placeholder in (header, cards, chart, detail):
+        placeholder.empty()
+    _render_bot(
+        run,
+        chart_key="bot_pnl_live_full",
+        day_key="bot_day_inspector_live",
+    )
 
 
 def _read_proof() -> dict[str, Any] | None:
@@ -793,12 +1379,18 @@ def config_path() -> str:
 
 def main() -> None:
     """Streamlit entry point."""
-    st.set_page_config(page_title="RegimeTrader", layout="wide")
+    st.set_page_config(
+        page_title="RegimeTrader",
+        page_icon="▦",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
     cfg, engine = dd.cfg_and_engine(config_path())
+    ui.inject_css()
+    choice = _sidebar()
     _header(cfg, engine)
-    choice = st.sidebar.radio("Screen", list(SCREENS))
-    st.sidebar.caption(dd.PAPER_DISCLAIMER)
     SCREENS[choice](cfg, engine)
+    ui.footer(dd.DISCLAIMER)
 
 
 if __name__ == "__main__":

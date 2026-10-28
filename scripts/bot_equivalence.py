@@ -270,9 +270,9 @@ def main(argv: list[str] | None = None) -> int:
         "--days",
         type=int,
         nargs="+",
-        default=[20240101, 20240105],
-        help="decision days to compare; the defaults are day 1 and day 5 of the "
-        "WHITELIST_START_DATES window",
+        default=None,
+        help="decision days to compare; by default day 1, day 30 and the last day of "
+        "the 60-day playback window, derived from the warehouse",
     )
     parser.add_argument(
         "--out",
@@ -286,12 +286,42 @@ def main(argv: list[str] | None = None) -> int:
     model = str(cfg["strategy"]["selected_model"])
     out = Path(args.out) if args.out else Path(cfg["paths"]["results"]) / OUTPUT_NAME
 
-    from src.dashboard.bot import WHITELIST_START_DATES, WINDOW_DAYS, lookback_trading_days
+    from src.dashboard.bot import (
+        WINDOW_DAYS,
+        available_start_dates,
+        lookback_trading_days,
+    )
 
     lookback = lookback_trading_days(cfg)
     print(f"lookback derived from config: {lookback} trading days")
     print(f"model: {model}   source: {source.name}")
-    print(f"whitelisted window: {list(WHITELIST_START_DATES)} ({WINDOW_DAYS} days)")
+
+    if args.days is None:
+        probe = get_engine(cfg)
+        try:
+            starts = available_start_dates(cfg, probe)
+            index_days = [
+                int(r)
+                for r in read_sql(
+                    probe,
+                    "SELECT p.date_key FROM fact_price p "
+                    "JOIN dim_stock s ON s.stock_key = p.stock_key "
+                    "WHERE s.instrument_type = 'INDEX' AND p.date_key >= :a ORDER BY 1",
+                    {"a": int(starts[0])},
+                )["date_key"]
+            ]
+        finally:
+            probe.dispose()
+        if not starts or len(index_days) < WINDOW_DAYS:
+            parser.error("the warehouse does not contain a full playback window")
+        args.days = [
+            int(index_days[0]),
+            int(index_days[WINDOW_DAYS // 2 - 1]),
+            int(index_days[WINDOW_DAYS - 1]),
+        ]
+
+    print(f"start options: {list(starts) if 'starts' in locals() else 'provided by --days'}")
+    print(f"playback window: {WINDOW_DAYS} trading days")
     print(
         "every mode recomputes from truncated raw data through the real pipeline; "
         "no stored fact_signal value is read"

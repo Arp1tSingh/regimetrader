@@ -15,7 +15,7 @@ import pandas as pd
 from sqlalchemy import event
 
 from src.common.config import load_config
-from src.common.db import get_engine, read_sql
+from src.common.db import read_sql
 
 #: Shown at the top of every screen.
 DISCLAIMER = (
@@ -48,9 +48,15 @@ def result_labels(cfg: dict[str, Any]) -> dict[str, str]:
 
 
 def cfg_and_engine(config: str | None = None) -> tuple[dict[str, Any], Any]:
-    """Load the config and open a read connection."""
+    """Load the config and open a **read-only** connection.
+
+    The app used to open a writable engine here even though every query is a SELECT.
+    Opening the SQLite file with `mode=ro` makes the read-only promise mechanical rather
+    than a convention: a mistake in a future screen fails at the database instead of
+    silently writing to the warehouse.
+    """
     cfg = load_config(config or "config/config.yaml")
-    return cfg, get_engine(cfg)
+    return cfg, readonly_engine(cfg)
 
 
 def readonly_engine(cfg: Mapping[str, Any]) -> Any:
@@ -93,29 +99,49 @@ def empty(message: str) -> None:
 # ---------------------------------------------------------------- market
 
 
-def index_and_regimes(cfg: dict[str, Any], engine: Any, limit_days: int = 1200) -> pd.DataFrame:
-    """Index close with the regime label, oldest first."""
-    return read_sql(
-        engine,
+def index_and_regimes(
+    cfg: dict[str, Any], engine: Any, limit_days: int | None = None
+) -> pd.DataFrame:
+    """Index close with the regime label, oldest first.
+
+    `limit_days=None` returns the whole stored history. The previous default of 1,200
+    silently cut a 2,900-day warehouse while the chart title claimed "whole stored
+    history"; a limit is still available for callers that explicitly want a window.
+    """
+    sql = (
         "SELECT p.date_key AS date_key, p.close_price AS close, r.regime_label AS regime "
         "FROM fact_price p "
         "JOIN dim_stock s ON s.stock_key = p.stock_key "
         "LEFT JOIN fact_market_regime m ON m.date_key = p.date_key "
         "LEFT JOIN dim_regime r ON r.regime_key = m.regime_key "
-        "WHERE s.symbol = :sym ORDER BY p.date_key DESC LIMIT :n",
-        {"sym": cfg["data"]["index_symbol"], "n": int(limit_days)},
-    ).iloc[::-1]
+        "WHERE s.symbol = :sym"
+    )
+    params: dict[str, Any] = {"sym": cfg["data"]["index_symbol"]}
+    if limit_days is None:
+        sql += " ORDER BY p.date_key"
+    else:
+        sql += " ORDER BY p.date_key DESC LIMIT :n"
+        params["n"] = int(limit_days)
+    frame = read_sql(engine, sql, params)
+    return frame if limit_days is None else frame.iloc[::-1]
 
 
-def vix_series(cfg: dict[str, Any], engine: Any, limit_days: int = 1200) -> pd.DataFrame:
-    """India VIX close, oldest first."""
-    return read_sql(
-        engine,
+def vix_series(
+    cfg: dict[str, Any], engine: Any, limit_days: int | None = None
+) -> pd.DataFrame:
+    """India VIX close, oldest first. `limit_days=None` means the full history."""
+    sql = (
         "SELECT p.date_key AS date_key, p.close_price AS close FROM fact_price p "
-        "JOIN dim_stock s ON s.stock_key = p.stock_key "
-        "WHERE s.symbol = :sym ORDER BY p.date_key DESC LIMIT :n",
-        {"sym": cfg["data"]["vix_symbol"], "n": int(limit_days)},
-    ).iloc[::-1]
+        "JOIN dim_stock s ON s.stock_key = p.stock_key WHERE s.symbol = :sym"
+    )
+    params: dict[str, Any] = {"sym": cfg["data"]["vix_symbol"]}
+    if limit_days is None:
+        sql += " ORDER BY p.date_key"
+    else:
+        sql += " ORDER BY p.date_key DESC LIMIT :n"
+        params["n"] = int(limit_days)
+    frame = read_sql(engine, sql, params)
+    return frame if limit_days is None else frame.iloc[::-1]
 
 
 def latest_data_key(engine: Any) -> int | None:
@@ -148,6 +174,18 @@ def regime_labels(engine: Any) -> list[str]:
         "JOIN dim_regime r ON r.regime_key = m.regime_key ORDER BY r.regime_label",
     )
     return [str(v) for v in frame["regime"].dropna().tolist()]
+
+
+def available_years(engine: Any) -> list[int]:
+    """Years that actually have equity indicator rows, for the OLAP filter."""
+    frame = read_sql(
+        engine,
+        "SELECT DISTINCT d.year AS year FROM fact_indicator i "
+        "JOIN dim_date d ON d.date_key = i.date_key "
+        "JOIN dim_stock s ON s.stock_key = i.stock_key "
+        "WHERE s.instrument_type = 'EQUITY' ORDER BY d.year",
+    )
+    return [int(v) for v in frame["year"].dropna().tolist()]
 
 
 def sector_quarter_returns(

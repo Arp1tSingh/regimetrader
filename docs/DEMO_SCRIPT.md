@@ -288,8 +288,8 @@ the bot trades and a visitor could mistake it for a live trading system.
 This is the strongest single demonstration of the no-look-ahead work, because it lets the
 examiner see the no-hindsight check rather than take it on trust.
 
-**Pick a start day from the dropdown and press "Run the bot".** It takes **8-10 seconds**
-(measured: 7.4s end to end, `logs/bot_verify.log`). Only five start dates exist and the
+**Pick a start day from the dropdown and press "Run the bot".** It replays **60 stored
+trading days** and takes roughly **8-12 seconds**. Only five start dates exist and the
 widget offers exactly those; there is no free-text box anywhere on the page.
 
 Per day it shows the regime, the entry threshold **that regime actually applied**, how many
@@ -311,17 +311,17 @@ see it.
 **The "verified offline" panel below it** reports a full literal recompute that was run
 separately and compared with the fast path.
 
-> "The page only recomputes a 267-day tail of history, so we proved that is equivalent: for
-> the first and last day of the window we ran the literal version — every row after the day
-> deleted, everything rebuilt from raw prices — and compared. Nothing is read from stored
-> results; both sides recompute through the same pipeline."
+> "The page only recomputes a 267-day tail of history, so we proved that is equivalent:
+> for the first, middle and last days of the 60-day window we ran the literal version -
+> every row after the day deleted, everything rebuilt from raw prices - and compared.
+> Nothing is read from stored results; both sides recompute through the same pipeline."
 
 **Read the numbers off the screen, do not recite them from memory.** They are printed
 there and they change if the code changes. What to point at:
 
 | Line on screen | What it is |
 |---|---|
-| Days tested | how many days the proof covers (day 1 and day 5 of the window) |
+| Days tested | how many days the proof covers (first, middle and last days of the 60-day window) |
 | values compared | `prob_up` values compared on that day |
 | max delta | the largest disagreement between the two paths |
 | literal (s) / fast (s) / speed-up | what the optimisation buys |

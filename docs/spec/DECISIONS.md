@@ -228,6 +228,12 @@ Two things follow, and they must not be conflated.
 
 *Why an addition at all.* R47 holds the dashboard read-only over stored results, which the replay screen satisfies for everything it reports: every figure comes from a warehouse row or a file an authorised run wrote. The replay differs only in *recomputing* day-level features on a copy, and it writes nothing. The screen was added for the viva, to let the no-hindsight check be observed rather than asserted; it is labelled as a demo throughout and is excluded from `dd.RESULT_RUNS`, because it is not a stored run and must not be charted alongside the authorised ones.
 
+**R56. The Bot demo may show explicitly labelled simulated fake-money P&L; statistical performance metrics remain forbidden.** *2026-10-28.* The replay is a presentation of stored decisions, not a live feed. A 60-trading-day window is long enough for the viewer to see the portfolio move, so the screen shows a **fake ₹10,00,000 portfolio** and a **same-capital buy-and-hold benchmark** in the configured index. The bot equity is the engine's own daily mark, net of the configured simulated costs; the benchmark is `initial_capital * index_close_t / index_close_day1`. The label **simulated / fake money / no performance claim** is on the screen at all times, and the initial capital and index name come from config.
+
+*What this does not permit:* Sharpe, CAGR, drawdown, volatility, win-rate or any other statistical performance metric on the Bot demo. **Backtest results remains the only performance-evaluation screen.** The screen shows no live market feed, makes no broker connection, and writes no result. The P&L exception is deliberately narrow and is recorded here because R54's blanket "no performance metric" rule would otherwise make the moving portfolio impossible to interpret.
+
+*Proof:* `reports/results/bot_equivalence.json` now covers the first, middle and last days of the 60-day window (20240101, 20240213, 20240328), with a 267-day lookback and model `rf`. All regime labels and target weights matched; all 50 `prob_up` values per day matched within 1e-9; every look-ahead mutation passed. The proof is generated from truncated raw prices, never from stored `fact_signal` values.
+
 ---
 
 ## 3. Open questions (agent: do not block on these; use the stated default)

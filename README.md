@@ -216,9 +216,9 @@ cannot alter anything.
 
 ### Bot demo (replay) — and its safety limits
 
-The **Bot demo (replay)** screen re-runs the frozen strategy over a few test-period days
-on a **temporary copy** of the warehouse, so a visitor can watch the bot decide and then
-check that its first-day orders match the recorded `backtest_main` run.
+The **Bot demo (replay)** screen re-runs the frozen strategy over **60 stored test-period
+trading days** on a **temporary copy** of the warehouse, so a visitor can watch the bot
+decide and then check that its first-day orders match the recorded `backtest_main` run.
 
 Two standing caveats on what it shows: the 50 names are today's constituents applied
 backwards (a static universe — survivorship bias), and prices are split/dividend
@@ -239,8 +239,11 @@ visitor:
 - results are **cached per start date**, and `paper_live`, `final_test` and everything
   that writes to the warehouse are unreachable from this code path (also tested).
 
-The screen is a **replay of already-scored data. It makes no performance claim.** It shows
-no Sharpe, CAGR or drawdown, and a test asserts those names never appear on it.
+The screen is a **replay of already-scored data. It makes no performance claim.** It does
+show an explicitly labelled **simulated fake-money P&L** versus a same-capital buy-and-hold
+Nifty benchmark (`DECISIONS` R56), because watching the replay is the demonstration. It
+still shows no Sharpe, CAGR, drawdown, volatility or win-rate, and tests assert those names
+never appear on it. **Backtest results remains the only performance-evaluation screen.**
 
 The one flag this screen lifts is the test-period guard, and only in a call that also sets
 `persist=False` and `write_signals=False` (`DECISIONS` R54). It replays days the authorised
@@ -256,8 +259,9 @@ feature is causal, so it is proved rather than asserted:
 python scripts/bot_equivalence.py     # ~3 min; writes reports/results/bot_equivalence.json
 ```
 
-For day 1 and day 5 it runs a **literal** recompute (every row after the day deleted, full
-rebuild) beside the fast path and compares regime label, `prob_up` and target weights.
+For the first, middle and last days of the 60-day window it runs a **literal** recompute
+(every row after the day deleted, full rebuild) beside the fast path and compares regime
+label, `prob_up` and target weights.
 **Nothing is read from stored `fact_signal`** — both sides recompute through the same
 pipeline, and a test corrupts a stored weight to prove the comparison can fail. It then
 changes a price **after** the day, keeps that row, and confirms the day's answer does not

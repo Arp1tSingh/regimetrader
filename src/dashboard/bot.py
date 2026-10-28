@@ -23,8 +23,8 @@ truncated copy using exactly the functions the daily paper bot uses
 (`build_indicators`, `_extend_regime`, `build_panel`, the saved classifier).
 
 Recomputing all 143k rows costs about 45-65s per call on this machine (measured, see
-`scripts/probe_costs.py`), so a five-day literal replay would take several minutes per
-click, which is not acceptable behind a web button. So the recompute is restricted to a
+`scripts/probe_costs.py`), so a literal replay would take several minutes per click,
+which is not acceptable behind a web button. So the recompute is restricted to a
 **lookback slice** of the needed history: the longest windows in play are the regime
 drawdown (`regime.drawdown_window`, 252), the smoothing window (`regime.smoothing.window`,
 5), and `sma_50` (50) in the indicators. `lookback_trading_days()` derives the total from
@@ -36,9 +36,9 @@ close and fill at the *next* day's open, so a per-day run would plan its entries
 nowhere to fill them.
 
 Slicing is sound only because every feature is causal. `equivalence` proves that rather
-than asserting it: for day 1 and day 5 the fast path is compared against a literal
-full recompute on a truncated copy, and a mutation test changes a row *after* D to show
-the day-D output does not move.
+than asserting it: the first, middle and last days of the 60-day window are compared
+against a literal full recompute on a truncated copy, and a mutation test changes a row
+*after* D to show the day-D output does not move.
 """
 
 from __future__ import annotations
@@ -72,12 +72,17 @@ WHITELIST_START_DATES: tuple[int, ...] = (
 
 
 def available_start_dates(cfg: Mapping[str, Any], engine: Any) -> tuple[int, ...]:
-    """The five start days this warehouse can replay.
+    """The five start days this warehouse can replay, each with a full window.
 
     Derived from `splits.test_start` and the index's trading days, so the real and smoke
     warehouses each get dates they actually contain. Still a fixed list computed by this
     module: the page offers a selectbox over it, so a visitor can only ever pick one of
     these values.
+
+    The number of *start options* is deliberately separate from `WINDOW_DAYS`. The
+    previous implementation returned `days[:WINDOW_DAYS]`, which meant a 60-day playback
+    would have offered 60 start dates. The contract is five options, each long enough for
+    the whole window.
     """
     from src.common.db import read_sql
 
@@ -92,13 +97,16 @@ def available_start_dates(cfg: Mapping[str, Any], engine: Any) -> tuple[int, ...
             {"a": int(test_start)},
         )["date_key"]
     ]
-    if len(days) < WINDOW_DAYS:
+    if len(days) < WINDOW_DAYS + START_DATE_COUNT - 1:
         return ()
-    return tuple(days[:WINDOW_DAYS])
+    return tuple(days[:START_DATE_COUNT])
 
 
-#: How many consecutive trading days each run covers.
-WINDOW_DAYS = 5
+#: How many consecutive trading days each replay covers.
+WINDOW_DAYS = 60
+
+#: How many start dates the selectbox offers. Kept separate from `WINDOW_DAYS`.
+START_DATE_COUNT = 5
 
 #: Names that must never be reachable from this module. Asserted by tests.
 FORBIDDEN_CALLABLES: tuple[str, ...] = (
@@ -185,6 +193,8 @@ class DayResult:
     #: The regime's configured entry threshold, so the screen shows what the strategy
     #: actually applied rather than a literal.
     entry_threshold: float | None = None
+    #: The configured index close for this day, used only for the simulated benchmark.
+    nifty_close: float | None = None
 
 
 @dataclass
@@ -200,12 +210,20 @@ class BotRun:
     first_day_orders_date: int | None = None
     elapsed_seconds: float = 0.0
     lookback: int = 0
+    #: Starting fake capital, read from `backtest.initial_capital` at run time.
+    initial_capital: float = 0.0
+    #: Configured benchmark identity. `index_label` is the human name, not the symbol.
+    index_symbol: str = ""
+    index_label: str = ""
 
     def as_json(self) -> dict[str, Any]:
         return {
             "start_date": self.start_date,
             "elapsed_seconds": round(self.elapsed_seconds, 2),
             "lookback": self.lookback,
+            "initial_capital": round(self.initial_capital, 2),
+            "index_symbol": self.index_symbol,
+            "index_label": self.index_label,
             "first_day_check": self.first_day_check,
             "days": [
                 {
@@ -219,11 +237,86 @@ class BotRun:
                     "equity": round(d.equity, 2),
                     "holdings": d.holdings,
                     "entry_threshold": d.entry_threshold,
+                    "nifty_close": None if d.nifty_close is None else round(d.nifty_close, 2),
                     "target_weights": {k: round(v, 6) for k, v in d.target_weights.items()},
                 }
                 for d in self.days
             ],
         }
+
+
+def portfolio_pnl(run: BotRun) -> pd.DataFrame:
+    """Per-day simulated P&L for the bot and the configured index benchmark.
+
+    The bot's equity comes from the replay engine's own daily marks, so it is already
+    net of the configured simulated costs and slippage. The benchmark is a buy-and-hold
+    position in the index, starting with the same fake capital at the first window close:
+
+        benchmark_equity_t = initial_capital * close_t / close_day_1
+
+    The function is pure and deliberately does not know how the screen renders the
+    numbers. It returns one row per replay day with decimal returns, not percentages.
+    Missing index closes produce NaN for the benchmark columns rather than a made-up
+    value.
+    """
+    columns = [
+        "date_key",
+        "bot_equity",
+        "bot_pnl",
+        "bot_return",
+        "nifty_equity",
+        "nifty_pnl",
+        "nifty_return",
+        "difference",
+        "difference_return",
+    ]
+    if not run.days:
+        return pd.DataFrame(columns=columns)
+
+    initial = float(run.initial_capital or 0.0)
+    if initial <= 0:
+        # Defensive fallback for a hand-built BotRun in a test or an old cache entry.
+        initial = float(run.days[0].equity or 0.0)
+
+    base_close = next(
+        (
+            float(day.nifty_close)
+            for day in run.days
+            if day.nifty_close is not None and float(day.nifty_close) > 0
+        ),
+        None,
+    )
+
+    rows: list[dict[str, Any]] = []
+    for day in run.days:
+        bot_equity = float(day.equity or 0.0)
+        bot_pnl = bot_equity - initial if initial else float("nan")
+        bot_return = bot_equity / initial - 1.0 if initial else float("nan")
+
+        nifty_equity = float("nan")
+        nifty_pnl = float("nan")
+        nifty_return = float("nan")
+        if base_close and day.nifty_close is not None and float(day.nifty_close) > 0 and initial:
+            nifty_equity = initial * float(day.nifty_close) / base_close
+            nifty_pnl = nifty_equity - initial
+            nifty_return = nifty_equity / initial - 1.0
+
+        difference = bot_equity - nifty_equity
+        difference_return = bot_return - nifty_return
+        rows.append(
+            {
+                "date_key": int(day.date_key),
+                "bot_equity": bot_equity,
+                "bot_pnl": bot_pnl,
+                "bot_return": bot_return,
+                "nifty_equity": nifty_equity,
+                "nifty_pnl": nifty_pnl,
+                "nifty_return": nifty_return,
+                "difference": difference,
+                "difference_return": difference_return,
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
 
 
 class ReplayBusy(RuntimeError):
@@ -375,6 +468,7 @@ def run_replay(
     allowed: tuple[int, ...] | None = None,
     deadline_check: Callable[[], None] | None = None,
     per_day_check: Callable[[int], None] | None = None,
+    phase_check: Callable[[str], None] | None = None,
 ) -> BotRun:
     """Replay `WINDOW_DAYS` trading days from `start_date` on a temp copy.
 
@@ -385,6 +479,7 @@ def run_replay(
         allowed: The whitelist to check against; derived from `cfg` when omitted.
         deadline_check: Optional cooperative timeout hook.
         per_day_check: Called with each day index as it completes, for progress display.
+        phase_check: Optional human-readable phase label for the screen's live status.
 
     Raises:
         ValueError: If `start_date` is not whitelisted.
@@ -413,14 +508,24 @@ def run_replay(
     started = time.time()
     lookback = lookback_trading_days(cfg)
 
-    index_days = [
-        int(r)
-        for r in read_sql(
-            get_engine(cfg),
-            "SELECT p.date_key FROM fact_price p JOIN dim_stock s ON s.stock_key=p.stock_key "
-            "WHERE s.instrument_type='INDEX' ORDER BY 1",
-        )["date_key"]
-    ]
+    def phase(label: str) -> None:
+        if phase_check is not None:
+            phase_check(label)
+
+    phase("Reading the trading calendar")
+    probe = get_engine(cfg)
+    try:
+        index_days = [
+            int(r)
+            for r in read_sql(
+                probe,
+                "SELECT p.date_key FROM fact_price p "
+                "JOIN dim_stock s ON s.stock_key=p.stock_key "
+                "WHERE s.instrument_type='INDEX' ORDER BY 1",
+            )["date_key"]
+        ]
+    finally:
+        probe.dispose()
     after = [d for d in index_days if d >= int(start_date)]
     if len(after) < WINDOW_DAYS:
         raise ValueError("not enough trading days after the start date")
@@ -432,7 +537,13 @@ def run_replay(
     # Never let anything in this replay behave like a live paper run.
     local_cfg["paper"]["run_id"] = "bot_replay"  # type: ignore[index]
 
-    run = BotRun(start_date=int(start_date), lookback=lookback)
+    run = BotRun(
+        start_date=int(start_date),
+        lookback=lookback,
+        initial_capital=float(cfg["backtest"]["initial_capital"]),
+        index_symbol=str(cfg["data"]["index_symbol"]),
+        index_label=str(cfg["data"].get("index_name") or cfg["data"]["index_symbol"]),
+    )
 
     with run_directory() as work:
         # Dispose the engine before the directory is removed: an open SQLite
@@ -454,22 +565,27 @@ def run_replay(
             # Truncate at the LAST day of the window: the bot never sees anything after
             # it. History before the lookback band is dropped purely for speed, which is
             # sound because every feature is causal. `scripts/bot_equivalence.py` proves
-            # it rather than asserting it: day 1 and day 5 are compared against a literal
-            # full recompute, and a mutation test changes a row after D to show the day-D
-            # output does not move.
+            # it rather than asserting it: day 1, day 30 and day 60 are compared against
+            # a literal full recompute, and a mutation test changes a row after D to show
+            # the day-D output does not move.
             #
             # Recomputing once instead of once per day is the difference between about 40
             # seconds and about three minutes per click: build_indicators on the band
             # costs ~39s measured. This is the "reuse the causal computation" of Option B.
             if deadline_check is not None:
                 deadline_check()
+            phase("Preparing a throwaway copy")
             trim_to_lookback(engine, window_end, lookback)
             truncate_after(engine, window_end)
 
+            phase("Recomputing indicators")
             build_indicators(engine, local_cfg)  # type: ignore[arg-type]
+            phase("Extending the regime series")
             _extend_regime(local_cfg, engine, window_end)  # type: ignore[arg-type]
+            phase("Building the feature panel")
             panel = build_panel(engine, local_cfg, use_cache=False, live=True)  # type: ignore[arg-type]
 
+            phase("Scoring probabilities")
             year = pd.Timestamp(str(window_end)).year
             estimator = joblib.load(
                 Path(cfg["paths"]["models"]) / f"{model}_wf{year}.joblib"  # type: ignore[index]
@@ -531,6 +647,24 @@ def run_replay(
                     signal_rows,
                 )
 
+            phase("Reading the benchmark")
+            benchmark = read_sql(
+                engine,
+                "SELECT p.date_key AS date_key, p.close_price AS close "
+                "FROM fact_price p JOIN dim_stock s ON s.stock_key = p.stock_key "
+                "WHERE s.symbol = :sym AND p.date_key BETWEEN :a AND :b",
+                {
+                    "sym": str(cfg["data"]["index_symbol"]),
+                    "a": int(window[0]),
+                    "b": int(window[-1]),
+                },
+            )
+            nifty_closes = {
+                int(row.date_key): float(row.close)
+                for row in benchmark.itertuples()
+                if row.close is not None and not pd.isna(row.close)
+            }
+
             # --- the real engine, over the whole window in one pass -----------
             #
             # It must be ONE call, not one per day. Orders are decided at a day's close
@@ -546,6 +680,7 @@ def run_replay(
             # tests assert this exact combination appears here and nowhere else.
             if deadline_check is not None:
                 deadline_check()
+            phase("Running the trading engine")
             result = run_backtest(
                 local_cfg,  # type: ignore[arg-type]
                 weights_fn,
@@ -572,6 +707,7 @@ def run_replay(
                         str(r.symbol): float(r.target_weight) for r in group.itertuples()
                     }
 
+            phase("Building the day-by-day view")
             book: dict[str, int] = {}
             for index, day_key in enumerate(window):
                 if deadline_check is not None:
@@ -596,6 +732,7 @@ def run_replay(
                         weights_by_day.get(int(day_key), {}),
                         entry_threshold(cfg, day_regime),
                         holdings=dict(book),
+                        nifty_close=nifty_closes.get(int(day_key)),
                     )
                 )
                 if per_day_check is not None:
@@ -661,6 +798,7 @@ def _day_from_result(
     weights: dict[str, float] | None = None,
     threshold: float | None = None,
     holdings: dict[str, int] | None = None,
+    nifty_close: float | None = None,
 ) -> DayResult:
     """Build one day's view from the engine's trades for that day and its equity row.
 
@@ -711,6 +849,7 @@ def _day_from_result(
         equity=equity,
         holdings=book,
         entry_threshold=threshold,
+        nifty_close=nifty_close,
     )
 
 
@@ -722,7 +861,8 @@ def first_day_check_against_backtest(cfg: Mapping[str, Any], run: "BotRun") -> d
     HINDUNILVR, ITC, KOTAKBANK, RELIANCE, SUNPHARMA, TITAN); the replay must produce
     exactly those from data up to the decision date only.
     """
-    from src.common.db import get_engine, read_sql
+    from src.common.db import read_sql
+    from src.dashboard.data import readonly_engine
 
     if not run.days:
         return {}
@@ -730,7 +870,7 @@ def first_day_check_against_backtest(cfg: Mapping[str, Any], run: "BotRun") -> d
     # comparison is against the stored trades on that second day.
     fill_date = run.first_day_orders_date or run.days[0].date_key
 
-    engine = get_engine(cfg)
+    engine = readonly_engine(cfg)
     try:
         stored = read_sql(
             engine,
